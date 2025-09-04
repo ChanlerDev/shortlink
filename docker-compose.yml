@@ -21,11 +21,11 @@ services:
       - --max-connections=1000
       - --innodb-buffer-pool-size=256M
     healthcheck:
-      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-p${MYSQL_ROOT_PASSWORD:-TheBestDevChanler}"]
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-p${MYSQL_ROOT_PASSWORD:-YourStrongPassword}"]
       interval: 10s
       timeout: 5s
-      retries: 5
-      start_period: 30s
+      retries: 10
+      start_period: 90s
     networks:
       - shortlink-network
 
@@ -57,6 +57,8 @@ services:
       - "8068:8068"
     environment:
       - JAVA_OPTS=${JAVA_OPTS:--Xmx1024m -Xms512m -XX:+UseG1GC -XX:MaxGCPauseMillis=200}
+      - REDIS_PASSWORD=${REDIS_PASSWORD:-YourStrongPassword}
+      - SHORTLINK_DOMAIN=${SHORTLINK_DOMAIN:-localhost:8068}
     volumes:
       # 自定义配置文件挂载 - 需要确保这些文件存在
       - ./application.yaml:/app/application.yaml:ro  # 应用配置
