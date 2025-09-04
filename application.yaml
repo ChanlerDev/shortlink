@@ -5,7 +5,7 @@ spring:
   datasource:
     # Use external ShardingSphere YAML mounted at /app
     driver-class-name: org.apache.shardingsphere.driver.ShardingSphereDriver
-    url: jdbc:shardingsphere:file:/app/shardingsphere-config.yaml
+    url: jdbc:shardingsphere:yaml:/app/shardingsphere-config.yaml
   mvc:
     view:
       prefix: /templates/
@@ -14,11 +14,11 @@ spring:
     redis:
       host: shortlink-redis
       port: 6379
-      password: ${REDIS_PASSWORD:-YourStrongPassword}
+      password: ${REDIS_PASSWORD:YourStrongPassword}
 
 short-link:
   domain:
-    default: ${SHORTLINK_DOMAIN:-localhost:8068}
+    default: ${SHORTLINK_DOMAIN:localhost:8068}
   rate-limit:
     create:
       enable: true
