@@ -20,10 +20,20 @@ public interface LinkBrowserStatsMapper extends BaseMapper<LinkBrowserStatsDO> {
      * 记录浏览器访问监控数据
      * @param linkBrowserStatsDO 浏览器统计实体
      */
-    @Insert("INSERT INTO " +
-            "t_link_browser_stats (full_short_url, date, cnt, browser, create_time, update_time, del_flag) " +
-            "VALUES( #{linkBrowserStats.fullShortUrl}, #{linkBrowserStats.date}, #{linkBrowserStats.cnt}, #{linkBrowserStats.browser}, NOW(), NOW(), 0) " +
-            "ON DUPLICATE KEY UPDATE cnt = cnt +  #{linkBrowserStats.cnt};")
+    @Insert("""
+            INSERT INTO t_link_browser_stats (
+                full_short_url, date, cnt, browser, create_time, update_time, del_flag
+            )
+            VALUES (
+                #{linkBrowserStats.fullShortUrl},
+                #{linkBrowserStats.date},
+                #{linkBrowserStats.cnt},
+                #{linkBrowserStats.browser},
+                NOW(), NOW(), 0
+            )
+            ON DUPLICATE KEY UPDATE
+                cnt = cnt + #{linkBrowserStats.cnt}
+            """)
     void shortLinkBrowserStats(@Param("linkBrowserStats") LinkBrowserStatsDO linkBrowserStatsDO);
 
     /**
@@ -31,20 +41,20 @@ public interface LinkBrowserStatsMapper extends BaseMapper<LinkBrowserStatsDO> {
      * @param linkStatsReqDTO 查询参数
      * @return 浏览器访问统计列表
      */
-    @Select("SELECT " +
-            "    tlbs.browser, " +
-            "    SUM(tlbs.cnt) AS count " +
-            "FROM " +
-            "    t_link tl INNER JOIN " +
-            "    t_link_browser_stats tlbs ON tl.full_short_url = tlbs.full_short_url " +
-            "WHERE " +
-            "    tlbs.full_short_url = #{param.fullShortUrl} " +
-            "    AND tl.gid = #{param.gid} " +
-            "    AND tl.del_flag = '0' " +
-            "    AND tl.enable_status = #{param.enableStatus} " +
-            "    AND tlbs.date BETWEEN #{param.startDate} and #{param.endDate} " +
-            "GROUP BY " +
-            "    tlbs.full_short_url, tl.gid, tlbs.browser;")
+    @Select("""
+            SELECT
+                tlbs.browser,
+                SUM(tlbs.cnt) AS count
+            FROM t_link tl
+            INNER JOIN t_link_browser_stats tlbs
+                ON tl.full_short_url = tlbs.full_short_url
+            WHERE tlbs.full_short_url = #{param.fullShortUrl}
+              AND tl.gid = #{param.gid}
+              AND tl.del_flag = '0'
+              AND tl.enable_status = #{param.enableStatus}
+              AND tlbs.date BETWEEN #{param.startDate} AND #{param.endDate}
+            GROUP BY tlbs.full_short_url, tl.gid, tlbs.browser
+            """)
     List<HashMap<String, Object>> listBrowserStatsByShortLink(@Param("param") LinkStatsReqDTO linkStatsReqDTO);
 
     /**
@@ -54,20 +64,16 @@ public interface LinkBrowserStatsMapper extends BaseMapper<LinkBrowserStatsDO> {
      */
     @Select("""
             SELECT
-                tlbs.browser
+                tlbs.browser,
                 SUM(tlbs.cnt) AS count
-            FROM
-                t_link tl
+            FROM t_link tl
             INNER JOIN t_link_browser_stats tlbs
                 ON tl.full_short_url = tlbs.full_short_url
-            WHERE
-                tl.gid = #{param.gid}
-                AND tl.del_flag = '0'
-                AND tl.enable_status = '0'
-                AND tlbs.date BETWEEN #{param.startDate} AND #{param.endDate}
-            GROUP BY
-                tl.gid
-                tlbs.browser
+            WHERE tl.gid = #{param.gid}
+              AND tl.del_flag = '0'
+              AND tl.enable_status = '0'
+              AND tlbs.date BETWEEN #{param.startDate} AND #{param.endDate}
+            GROUP BY tl.gid, tlbs.browser
             """)
     List<HashMap<String, Object>> listBrowserStatsByGroup(@Param("param") GroupStatsReqDTO groupStatsReqDTO);
 }

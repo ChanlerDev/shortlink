@@ -46,8 +46,8 @@ public interface LinkAccessLogsMapper extends BaseMapper<LinkAccessLogsDO> {
      */
     @Select("""
             SELECT
-                COUNT(tls.user) AS pv
-                COUNT(DISTINCT tls.user) AS uv
+                COUNT(tls.user) AS pv,
+                COUNT(DISTINCT tls.user) AS uv,
                 COUNT(DISTINCT tls.ip) AS uip
             FROM t_link tl
             INNER JOIN t_link_access_logs tls
@@ -67,7 +67,7 @@ public interface LinkAccessLogsMapper extends BaseMapper<LinkAccessLogsDO> {
      */
     @Select("""
             SELECT
-                tls.ip
+                tls.ip,
                 COUNT(tls.ip) AS count
             FROM t_link tl
             INNER JOIN t_link_access_logs tls
@@ -92,7 +92,7 @@ public interface LinkAccessLogsMapper extends BaseMapper<LinkAccessLogsDO> {
      */
     @Select("""
             SELECT
-                tls.ip
+                tls.ip,
                 COUNT(tls.ip) AS count
             FROM t_link tl
             INNER JOIN t_link_access_logs tls
@@ -115,11 +115,11 @@ public interface LinkAccessLogsMapper extends BaseMapper<LinkAccessLogsDO> {
      */
     @Select("""
             SELECT
-                SUM(old_user) AS oldUserCnt
+                SUM(old_user) AS oldUserCnt,
                 SUM(new_user) AS newUserCnt
             FROM (
                 SELECT
-                    CASE WHEN COUNT(DISTINCT DATE(tls.create_time)) > 1 THEN 1 ELSE 0 END AS old_user
+                    CASE WHEN COUNT(DISTINCT DATE(tls.create_time)) > 1 THEN 1 ELSE 0 END AS old_user,
                     CASE WHEN COUNT(DISTINCT DATE(tls.create_time)) = 1
                         AND MAX(tls.create_time) >= #{param.startDate}
                         AND MAX(tls.create_time) <= #{param.endDate}
@@ -149,7 +149,7 @@ public interface LinkAccessLogsMapper extends BaseMapper<LinkAccessLogsDO> {
     @Select("""
             <script>
             SELECT
-                tls.user
+                tls.user,
                 CASE
                     WHEN MIN(tls.create_time) BETWEEN #{startDate} AND #{endDate} THEN '新访客'
                     ELSE '老访客'
@@ -207,7 +207,7 @@ public interface LinkAccessLogsMapper extends BaseMapper<LinkAccessLogsDO> {
     @Select("""
             <script>
             SELECT
-                tls.user
+                tls.user,
                 CASE
                     WHEN MIN(tls.create_time) BETWEEN #{startDate} AND #{endDate} THEN '新访客'
                     ELSE '老访客'
