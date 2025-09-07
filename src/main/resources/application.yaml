@@ -14,7 +14,7 @@ spring:
   data:
     redis:
       host: 127.0.0.1
-      password: TheBestDevChanler
+      password: YourStrongPassword
       port: 6379
 
 short-link:

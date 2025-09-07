@@ -29,6 +29,21 @@ wget https://raw.githubusercontent.com/Merryfling/shortlink/main/shardingsphere-
 docker-compose up -d
 ```
 
+### 常见数据库连接错误排查
+
+- 报错 `Public Key Retrieval is not allowed`
+  - 原因：MySQL 8 默认 `caching_sha2_password`，JDBC 未允许公钥获取。
+  - 解决（二选一）：
+    - 在 JDBC URL 追加：`allowPublicKeyRetrieval=true&useSSL=false`
+      - 示例（在 shardingsphere-config.yaml 的 `jdbcUrl` 中）：
+        `jdbc:mysql://shortlink-mysql:3306/db_shortlink?...&useSSL=false&allowPublicKeyRetrieval=true`
+    - 或将用户改为 `mysql_native_password`：
+      ```bash
+      docker compose exec shortlink-mysql mysql -uroot -p$MYSQL_ROOT_PASSWORD -e \
+        "ALTER USER 'linkapp'@'%' IDENTIFIED WITH mysql_native_password BY '$MYSQL_PASSWORD'; FLUSH PRIVILEGES;"
+      ```
+  - 同时确保：容器内连接地址使用 `shortlink-mysql:3306`。
+
 ### 2. 安全部署（推荐 - 自定义密码）
 
 ```bash

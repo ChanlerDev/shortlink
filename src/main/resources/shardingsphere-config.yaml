@@ -5,7 +5,7 @@ dataSources:
     driverClassName: com.mysql.cj.jdbc.Driver
     jdbcUrl: jdbc:mysql://127.0.0.1:3306/db_shortlink?useUnicode=true&characterEncoding=UTF-8&rewriteBatchedStatements=true&allowMultiQueries=true&serverTimezone=Asia/Shanghai
     username: linkapp
-    password: TheBestWorkLinkapp
+    password: YourStrongPassword
 
 rules:
   - !SHARDING
