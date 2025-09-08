@@ -9,6 +9,7 @@ services:
       MYSQL_DATABASE: db_shortlink
       MYSQL_USER: linkapp
       MYSQL_PASSWORD: ${MYSQL_PASSWORD:-YourStrongPassword}
+      TZ: Asia/Shanghai
     volumes:
       - mysql_data:/var/lib/mysql
       - ./link.sql:/docker-entrypoint-initdb.d/01-link.sql:ro  # 直接挂载根目录的 SQL 文件
@@ -20,6 +21,7 @@ services:
       - --sql-mode=STRICT_TRANS_TABLES,NO_ZERO_DATE,NO_ZERO_IN_DATE,ERROR_FOR_DIVISION_BY_ZERO
       - --max-connections=1000
       - --innodb-buffer-pool-size=256M
+      - --default-time-zone=+08:00
     healthcheck:
       test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-p${MYSQL_ROOT_PASSWORD:-YourStrongPassword}"]
       interval: 10s
@@ -56,6 +58,8 @@ services:
     ports:
       - "8068:8068"
     environment:
+      - TZ=Asia/Shanghai
+      - JAVA_TOOL_OPTIONS=-Duser.timezone=Asia/Shanghai
       - JAVA_OPTS=${JAVA_OPTS:--Xmx1024m -Xms512m -XX:+UseG1GC -XX:MaxGCPauseMillis=200}
       - REDIS_PASSWORD=${REDIS_PASSWORD:-YourStrongPassword}
       - SHORTLINK_DOMAIN=${SHORTLINK_DOMAIN:-localhost:8068}
