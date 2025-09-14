@@ -135,10 +135,10 @@ public class LinkServiceImpl extends ServiceImpl<LinkMapper, LinkDO> implements 
             linkCreateReqDTO.setValidDateType(ValidDateTypeEnum.CUSTOM.getType());
         }
         
-        String shortLinkSuffix = generateSuffix(linkCreateReqDTO);
+        String shortCode = ShortCodeUtil.next();
         String fullShortUrl = StrBuilder.create(createLinkDefaultDomain)
                 .append("/")
-                .append(shortLinkSuffix)
+                .append(shortCode)
                 .toString();
         LinkDO shortLinkDO = LinkDO.builder()
                 .domain(createLinkDefaultDomain)
@@ -148,7 +148,7 @@ public class LinkServiceImpl extends ServiceImpl<LinkMapper, LinkDO> implements 
                 .validDateType(linkCreateReqDTO.getValidDateType())
                 .validDate(linkCreateReqDTO.getValidDate())
                 .describe(linkCreateReqDTO.getDescribe())
-                .shortUri(shortLinkSuffix)
+                .shortUri(shortCode)
                 .enableStatus(0)
                 .totalPv(0)
                 .totalUv(0)
@@ -585,29 +585,6 @@ public class LinkServiceImpl extends ServiceImpl<LinkMapper, LinkDO> implements 
         } catch (Exception e) {
             log.error("短链接访问统计失败，fullShortUrl: {}", fullShortUrl, e);
         }
-    }
-
-    private String generateSuffix(LinkCreateReqDTO linkCreateReqDTO) {
-        int customGenerateCount = 0;
-        String shortUri;
-        String fullShortUrl;
-        while (true) {
-            if (customGenerateCount > 10) {
-                throw new ServiceException("短链接生成频繁，请稍后再试");
-            }
-            String originUrl = linkCreateReqDTO.getOriginUrl();
-            originUrl += System.currentTimeMillis();
-            shortUri = HashUtil.hashToBase62(originUrl);
-            fullShortUrl = StrBuilder.create(createLinkDefaultDomain)
-                    .append("/")
-                    .append(shortUri)
-                    .toString();
-            if (!shortUriCreateCachePenetrationBloomFilter.contains(fullShortUrl)) {
-                break;
-            }
-            customGenerateCount++;
-        }
-        return shortUri;
     }
 
     private String getFavicon(String url) {
