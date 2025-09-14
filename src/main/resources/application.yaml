@@ -21,6 +21,12 @@ short-link:
   domain:
     default: 127.0.0.1:8068
     # default: go.chanler.dev
+  shortcode:
+    segmentStep: 10000
+    prefetchRatio: 0.2
+    a: 1234567
+    b: 123456789
+    length: 6
   rate-limit:
     create:
       enable: true

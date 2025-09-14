@@ -19,7 +19,7 @@ import org.springframework.data.redis.core.StringRedisTemplate;
 import java.io.IOException;
 
 import static dev.chanler.shortlink.common.convention.errorcode.BaseErrorCode.USER_TOKEN_FAIL;
-import static dev.chanler.shortlink.common.constant.RedisKeyConstant.API_TOKEN_HASH_KEY_PREFIX;
+import static dev.chanler.shortlink.common.constant.RedisKeyConstant.API_TOKEN_HASH_KEY;
 import static dev.chanler.shortlink.common.constant.UserConstant.PUBLIC_USERNAME;
 
 /**
@@ -67,7 +67,7 @@ public class ApiTokenAuthFilter implements Filter {
         String username = null;
         try {
             String tokenHash = sha256Hex(token);
-            String key = String.format(API_TOKEN_HASH_KEY_PREFIX, tokenHash);
+            String key = String.format(API_TOKEN_HASH_KEY, tokenHash);
             username = stringRedisTemplate.opsForValue().get(key);
         } catch (Throwable t) {
             log.error("Read api token mapping error", t);

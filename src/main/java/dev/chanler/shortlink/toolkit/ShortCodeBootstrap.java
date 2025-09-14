@@ -1,0 +1,24 @@
+package dev.chanler.shortlink.toolkit;
+
+import jakarta.annotation.PostConstruct;
+import lombok.RequiredArgsConstructor;
+import org.springframework.stereotype.Component;
+import org.springframework.data.redis.core.StringRedisTemplate;
+
+/**
+ * 启动引导：由 Spring 容器在应用启动时执行一次，初始化短码生成器。
+ * @author: Chanler
+ */
+@Component
+@RequiredArgsConstructor
+public class ShortCodeBootstrap {
+
+    private final StringRedisTemplate stringRedisTemplate;
+    private final ShortCodeProps shortCodeProps;
+
+    @PostConstruct
+    public void init() {
+        ShortCodeUtil.init(stringRedisTemplate, shortCodeProps);
+    }
+}
+

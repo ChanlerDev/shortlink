@@ -28,8 +28,6 @@ import org.redisson.api.RLock;
 import org.redisson.api.RedissonClient;
 import org.springframework.beans.BeanUtils;
 import org.springframework.dao.DuplicateKeyException;
-import org.springframework.data.redis.core.RedisOperations;
-import org.springframework.data.redis.core.SessionCallback;
 import org.springframework.data.redis.core.script.DefaultRedisScript;
 import org.springframework.core.io.ClassPathResource;
 import org.springframework.scripting.support.ResourceScriptSource;
@@ -45,7 +43,7 @@ import java.util.concurrent.TimeUnit;
 
 import static dev.chanler.shortlink.common.constant.RedisKeyConstant.LOCK_USER_REGISTER_KEY;
 import static dev.chanler.shortlink.common.constant.RedisKeyConstant.USER_LOGIN_KEY;
-import static dev.chanler.shortlink.common.constant.RedisKeyConstant.SESSION_KEY_PREFIX;
+import static dev.chanler.shortlink.common.constant.RedisKeyConstant.SESSION_KEY;
 import static dev.chanler.shortlink.common.constant.RedisKeyConstant.USER_GIDS_KEY;
 import static dev.chanler.shortlink.common.convention.errorcode.BaseErrorCode.*;
 
@@ -133,7 +131,7 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, UserDO> implements 
                     .findFirst()
                     .map(Object::toString)
                     .orElseThrow(() -> new ClientException("用户登录错误"));
-            stringRedisTemplate.opsForValue().set(String.format(SESSION_KEY_PREFIX, token), userLoginReqDTO.getUsername(), 30, TimeUnit.MINUTES);
+            stringRedisTemplate.opsForValue().set(String.format(SESSION_KEY, token), userLoginReqDTO.getUsername(), 30, TimeUnit.MINUTES);
             stringRedisTemplate.expire(USER_LOGIN_KEY + userLoginReqDTO.getUsername(), 30, TimeUnit.MINUTES);
             // 刷新该用户 GID 正向索引集合 TTL（并补齐集合）
             refreshUserGidsIndex(userLoginReqDTO.getUsername());
@@ -141,7 +139,7 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, UserDO> implements 
         }
         // 生成新 token，并同时写入会话映射与兼容的用户名 Hash
         String uuid = UUID.randomUUID().toString();
-        stringRedisTemplate.opsForValue().set(String.format(SESSION_KEY_PREFIX, uuid), userLoginReqDTO.getUsername(), 30, TimeUnit.MINUTES);
+        stringRedisTemplate.opsForValue().set(String.format(SESSION_KEY, uuid), userLoginReqDTO.getUsername(), 30, TimeUnit.MINUTES);
         stringRedisTemplate.opsForHash().put(USER_LOGIN_KEY + userLoginReqDTO.getUsername(), uuid, JSON.toJSONString(userDO));
         stringRedisTemplate.expire(USER_LOGIN_KEY + userLoginReqDTO.getUsername(), 30, TimeUnit.MINUTES);
         // 刷新该用户 GID 正向索引集合 TTL（并补齐集合）
@@ -151,13 +149,13 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, UserDO> implements 
 
     @Override
     public Boolean checkLogin(String username, String token) {
-        String actualUsername = stringRedisTemplate.opsForValue().get(String.format(SESSION_KEY_PREFIX, token));
+        String actualUsername = stringRedisTemplate.opsForValue().get(String.format(SESSION_KEY, token));
         return actualUsername != null && actualUsername.equals(username);
     }
 
     @Override
     public void logout(String username, String token) {
-        String key = String.format(SESSION_KEY_PREFIX, token);
+        String key = String.format(SESSION_KEY, token);
         String actualUsername = stringRedisTemplate.opsForValue().get(key);
         if (actualUsername == null || !actualUsername.equals(username)) {
             throw new ClientException("用户未登录或登录已过期");

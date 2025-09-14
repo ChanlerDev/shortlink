@@ -31,6 +31,7 @@ import dev.chanler.shortlink.mq.producer.LinkStatsSaveProducer;
 import dev.chanler.shortlink.service.LinkService;
 import dev.chanler.shortlink.toolkit.HashUtil;
 import dev.chanler.shortlink.toolkit.LinkUtil;
+import dev.chanler.shortlink.toolkit.ShortCodeUtil;
 import dev.chanler.shortlink.toolkit.ipgeo.GeoInfo;
 import dev.chanler.shortlink.toolkit.ipgeo.IpGeoClient;
 import jakarta.servlet.ServletRequest;
@@ -323,7 +324,12 @@ public class LinkServiceImpl extends ServiceImpl<LinkMapper, LinkDO> implements 
             ((HttpServletResponse) response).sendRedirect(originalLink);
             return;
         }
-        boolean contains = shortUriCreateCachePenetrationBloomFilter.contains(fullShortUrl);
+        boolean contains = ShortCodeUtil.mightExist(shortUri);
+        if (!contains) {
+            ((HttpServletResponse) response).sendRedirect("/page/notfound");
+            return;
+        }
+        contains = shortUriCreateCachePenetrationBloomFilter.contains(fullShortUrl);
         if (!contains) {
             ((HttpServletResponse) response).sendRedirect("/page/notfound");
             return;

@@ -18,7 +18,7 @@ import java.util.List;
 import java.util.Objects;
 import java.util.concurrent.TimeUnit;
 
-import static dev.chanler.shortlink.common.constant.RedisKeyConstant.SESSION_KEY_PREFIX;
+import static dev.chanler.shortlink.common.constant.RedisKeyConstant.SESSION_KEY;
 import static dev.chanler.shortlink.common.constant.RedisKeyConstant.USER_GIDS_KEY;
 import static dev.chanler.shortlink.common.convention.errorcode.BaseErrorCode.USER_TOKEN_FAIL;
 import static dev.chanler.shortlink.common.constant.UserConstant.PUBLIC_USERNAME;
@@ -62,7 +62,7 @@ public class UserTransmitFilter implements Filter {
                     }
                     String username;
                     try {
-                        String key = String.format(SESSION_KEY_PREFIX, token);
+                        String key = String.format(SESSION_KEY, token);
                         username = stringRedisTemplate.opsForValue().get(key);
                         if (StrUtil.isBlank(username)) {
                             unauthorized((HttpServletResponse) servletResponse);

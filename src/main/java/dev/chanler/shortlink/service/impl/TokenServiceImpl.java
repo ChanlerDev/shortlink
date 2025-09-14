@@ -16,12 +16,11 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 
-import java.util.Date;
 import java.util.List;
 import java.util.Objects;
 import java.util.concurrent.TimeUnit;
 
-import static dev.chanler.shortlink.common.constant.RedisKeyConstant.API_TOKEN_HASH_KEY_PREFIX;
+import static dev.chanler.shortlink.common.constant.RedisKeyConstant.API_TOKEN_HASH_KEY;
 
 @Slf4j
 @Service
@@ -75,7 +74,7 @@ public class TokenServiceImpl extends ServiceImpl<TokenMapper, TokenDO> implemen
             throw new ClientException("令牌不存在");
         }
         // 删除 Redis 映射（按哈希键）
-        try { stringRedisTemplate.delete(String.format(API_TOKEN_HASH_KEY_PREFIX, token.getTokenHash())); } catch (Throwable t) {
+        try { stringRedisTemplate.delete(String.format(API_TOKEN_HASH_KEY, token.getTokenHash())); } catch (Throwable t) {
             log.error("Delete api-token mapping error", t);
         }
         // 逻辑删除
@@ -101,14 +100,14 @@ public class TokenServiceImpl extends ServiceImpl<TokenMapper, TokenDO> implemen
         } else {
             token.setEnableStatus(1);
             baseMapper.updateById(token);
-            try { stringRedisTemplate.delete(String.format(API_TOKEN_HASH_KEY_PREFIX, token.getTokenHash())); } catch (Throwable t) {
+            try { stringRedisTemplate.delete(String.format(API_TOKEN_HASH_KEY, token.getTokenHash())); } catch (Throwable t) {
                 log.error("Delete api-token mapping error", t);
             }
         }
     }
 
     private void writeRedisMapping(String tokenHash, String username, java.util.Date validDate) {
-        String key = String.format(API_TOKEN_HASH_KEY_PREFIX, tokenHash);
+        String key = String.format(API_TOKEN_HASH_KEY, tokenHash);
         try {
             if (validDate == null) {
                 stringRedisTemplate.opsForValue().set(key, username);

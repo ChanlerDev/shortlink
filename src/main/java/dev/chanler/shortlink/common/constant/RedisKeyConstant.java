@@ -77,7 +77,7 @@ public class RedisKeyConstant {
     public static final String SHORT_LINK_STATS_STREAM_GROUP_KEY = "short-link:stats-stream:only-group";
 
     /**
-     * GID 反向归属索引（旧方案，逐步废弃）
+     * GID 反向归属索引（旧方案，废弃）
      * 格式：short-link:gid-owner:{gid} -> username
      */
     public static final String GID_OWNER_KEY = "short-link:gid-owner:%s";
@@ -92,7 +92,7 @@ public class RedisKeyConstant {
      * Admin / Client 会话 Token 映射
      * 格式：short-link:session:{token} -> username
      */
-    public static final String SESSION_KEY_PREFIX = "short-link:session:%s";
+    public static final String SESSION_KEY = "short-link:session:%s";
 
     /**
      * Core API 访问令牌映射
@@ -104,5 +104,11 @@ public class RedisKeyConstant {
      * Core API 访问令牌映射（哈希值）
      * 格式：short-link:api-token-h:{sha256(token)} -> username
      */
-    public static final String API_TOKEN_HASH_KEY_PREFIX = "short-link:api-token-h:%s";
+    public static final String API_TOKEN_HASH_KEY = "short-link:api-token-h:%s";
+
+    /**
+     * 短码号段分配全局 Key
+     * 格式：short-link:allocation:global
+     */
+    public static final String SHORT_CODE_ALLOCATION_KEY = "short-link:allocation:global";
 }
