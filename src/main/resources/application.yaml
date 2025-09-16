@@ -17,6 +17,12 @@ spring:
       password: YourStrongPassword
       port: 6379
 
+springdoc:
+  api-docs:
+    path: /v3/api-docs
+  swagger-ui:
+    path: /swagger-ui.html
+
 short-link:
   domain:
     default: 127.0.0.1:8068

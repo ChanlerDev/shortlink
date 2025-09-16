@@ -16,6 +16,12 @@ spring:
       port: 6379
       password: ${REDIS_PASSWORD:YourStrongPassword}
 
+springdoc:
+  api-docs:
+    path: /v3/api-docs
+  swagger-ui:
+    path: /swagger-ui.html
+
 short-link:
   domain:
     default: ${SHORTLINK_DOMAIN:localhost:8068}

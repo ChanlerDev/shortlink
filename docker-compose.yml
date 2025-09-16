@@ -65,8 +65,8 @@ services:
       - SHORTLINK_DOMAIN=${SHORTLINK_DOMAIN:-localhost:8068}
     volumes:
       # 自定义配置文件挂载 - 需要确保这些文件存在
-      - ./application.yaml:/app/application.yaml:ro  # 应用配置
-      - ./shardingsphere-config.yaml:/app/shardingsphere-config.yaml:ro  # 分库分表配置
+      - ./application-docker.yaml:/app/application.yaml:ro  # 应用配置
+      - ./shardingsphere-config-docker.yaml:/app/shardingsphere-config.yaml:ro  # 分库分表配置
     depends_on:
       mysql:
         condition: service_healthy

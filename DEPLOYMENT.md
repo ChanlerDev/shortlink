@@ -22,8 +22,8 @@
 # 下载部署文件
 wget https://raw.githubusercontent.com/Merryfling/shortlink/main/docker-compose.yml
 wget https://raw.githubusercontent.com/Merryfling/shortlink/main/link.sql
-wget https://raw.githubusercontent.com/Merryfling/shortlink/main/application.yaml
-wget https://raw.githubusercontent.com/Merryfling/shortlink/main/shardingsphere-config.yaml
+wget https://raw.githubusercontent.com/Merryfling/shortlink/main/application-docker.yaml
+wget https://raw.githubusercontent.com/Merryfling/shortlink/main/shardingsphere-config-docker.yaml
 
 # 启动服务（使用默认密码）
 docker-compose up -d
@@ -35,7 +35,7 @@ docker-compose up -d
   - 原因：MySQL 8 默认 `caching_sha2_password`，JDBC 未允许公钥获取。
   - 解决（二选一）：
     - 在 JDBC URL 追加：`allowPublicKeyRetrieval=true&useSSL=false`
-      - 示例（在 shardingsphere-config.yaml 的 `jdbcUrl` 中）：
+      - 示例（在 shardingsphere-config-docker.yaml 的 `jdbcUrl` 中）：
         `jdbc:mysql://shortlink-mysql:3306/db_shortlink?...&useSSL=false&allowPublicKeyRetrieval=true`
     - 或将用户改为 `mysql_native_password`：
       ```bash
@@ -50,8 +50,8 @@ docker-compose up -d
 # 1. 下载部署文件
 wget https://raw.githubusercontent.com/Merryfling/shortlink/main/docker-compose.yml
 wget https://raw.githubusercontent.com/Merryfling/shortlink/main/link.sql
-wget https://raw.githubusercontent.com/Merryfling/shortlink/main/application.yaml
-wget https://raw.githubusercontent.com/Merryfling/shortlink/main/shardingsphere-config.yaml
+wget https://raw.githubusercontent.com/Merryfling/shortlink/main/application-docker.yaml
+wget https://raw.githubusercontent.com/Merryfling/shortlink/main/shardingsphere-config-docker.yaml
 wget https://raw.githubusercontent.com/Merryfling/shortlink/main/.env.example
 
 # 2. 设置自定义密码
@@ -73,8 +73,8 @@ docker-compose up -d
 # 1. 下载所有文件
 wget https://raw.githubusercontent.com/Merryfling/shortlink/main/docker-compose.yml
 wget https://raw.githubusercontent.com/Merryfling/shortlink/main/link.sql
-wget https://raw.githubusercontent.com/Merryfling/shortlink/main/application.yaml
-wget https://raw.githubusercontent.com/Merryfling/shortlink/main/shardingsphere-config.yaml
+wget https://raw.githubusercontent.com/Merryfling/shortlink/main/application-docker.yaml
+wget https://raw.githubusercontent.com/Merryfling/shortlink/main/shardingsphere-config-docker.yaml
 wget https://raw.githubusercontent.com/Merryfling/shortlink/main/.env.example
 
 # 2. 设置环境变量
@@ -82,12 +82,12 @@ cp .env.example .env
 vi .env
 
 # 3. 编辑配置文件（根据需要修改）
-vi application.yaml
+vi application-docker.yaml
 # 主要修改：
 # - short-link.domain.default: 改为您的域名
 # - spring.data.redis.password: 使用 .env 中设置的密码
 
-vi shardingsphere-config.yaml  
+vi shardingsphere-config-docker.yaml  
 # 主要修改：
 # - 数据库连接信息（如果需要）
 # - 分表数量配置
@@ -103,8 +103,8 @@ docker-compose up -d
 deployment/
 ├── docker-compose.yml         # 服务编排文件
 ├── link.sql                  # 数据库表结构
-├── application.yaml          # 应用配置
-└── shardingsphere-config.yaml # 分库分表配置
+├── application-docker.yaml          # 应用配置
+└── shardingsphere-config-docker.yaml # 分库分表配置
 ```
 
 ### 安全部署（推荐）
@@ -112,8 +112,8 @@ deployment/
 deployment/
 ├── docker-compose.yml         # 服务编排文件
 ├── link.sql                  # 数据库表结构
-├── application.yaml          # 应用配置
-├── shardingsphere-config.yaml # 分库分表配置
+├── application-docker.yaml          # 应用配置
+├── shardingsphere-config-docker.yaml # 分库分表配置
 └── .env                      # 环境变量配置（密码等）
 ```
 
@@ -123,8 +123,8 @@ deployment/
 ├── docker-compose.yml         # 服务编排文件
 ├── link.sql                  # 数据库表结构
 ├── .env                      # 环境变量配置
-├── application.yaml          # 自定义应用配置
-└── shardingsphere-config.yaml # 自定义分库分表配置
+├── application-docker.yaml          # 自定义应用配置
+└── shardingsphere-config-docker.yaml # 自定义分库分表配置
 ```
 
 ## 🗄️ 数据库自动初始化
@@ -133,7 +133,7 @@ deployment/
 1. **创建数据库**: 自动创建 `db_shortlink` 数据库
 2. **创建用户**: 自动创建应用用户 `linkapp` 并授权
 3. **执行 SQL**: 自动执行 `link.sql` 创建所有表结构，包括：
-   - 用户表（分表 `t_user_0` ~ `t_user_15`）
+   - 用户表（单表 `t_user`）
    - 短链接表（分表 `t_link_0` ~ `t_link_15`） 
    - 跳转表（分表 `t_link_goto_0` ~ `t_link_goto_15`）
    - 分组表（分表 `t_group_0` ~ `t_group_15`）
@@ -221,12 +221,12 @@ SHORTLINK_DOMAIN=yourdomain.com
 ### 配置优先级
 1. **环境变量（.env 文件）** > **默认值**
 2. **外部挂载配置文件** > **镜像内默认配置**
-3. 如果同级目录存在 `application.yaml`，将覆盖镜像内配置
-4. 如果同级目录存在 `shardingsphere-config.yaml`，将覆盖镜像内配置
+3. 如果同级目录存在 `application-docker.yaml`，将覆盖镜像内配置
+4. 如果同级目录存在 `shardingsphere-config-docker.yaml`，将覆盖镜像内配置
 
 ### 主要配置项
 
-#### application.yaml 关键配置：
+#### application-docker.yaml 关键配置：
 ```yaml
 server:
   port: 8068
@@ -307,7 +307,7 @@ environment:
   MYSQL_ROOT_PASSWORD: YourStrongPassword
   MYSQL_PASSWORD: YourStrongPassword
 
-# 同步修改 application.yaml（如果使用自定义配置）
+# 同步修改 application-docker.yaml（如果使用自定义配置）
 spring:
   data:
     redis:
@@ -316,8 +316,8 @@ spring:
 
 ### 2. 域名配置
 ```bash
-# 编辑 application.yaml
-vi application.yaml
+# 编辑 application-docker.yaml
+vi application-docker.yaml
 
 # 修改域名设置
 short-link:
