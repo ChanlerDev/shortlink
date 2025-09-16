@@ -179,6 +179,11 @@ public class LinkServiceImpl extends ServiceImpl<LinkMapper, LinkDO> implements 
                 linkCreateReqDTO.getOriginUrl(),
                 LinkUtil.getLinkCacheValidTime(linkCreateReqDTO.getValidDate()), TimeUnit.MILLISECONDS
         );
+        try {
+            stringRedisTemplate.delete(String.format(GOTO_IS_NULL_SHORT_LINK_KEY, fullShortUrl));
+        } catch (Throwable t) {
+            log.warn("Clear negative cache on create error, fullShortUrl={}", fullShortUrl, t);
+        }
         shortUriCreateCachePenetrationBloomFilter.add(fullShortUrl);
         return LinkCreateRespDTO.builder()
                 .fullShortUrl("http://" + shortLinkDO.getFullShortUrl())
