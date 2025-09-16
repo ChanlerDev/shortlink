@@ -21,6 +21,7 @@ springdoc:
     path: /v3/api-docs
   swagger-ui:
     path: /swagger-ui.html
+  paths-to-match: /api/short-link/v1/**
 
 short-link:
   domain:
