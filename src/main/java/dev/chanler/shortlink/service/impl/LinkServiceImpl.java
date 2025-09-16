@@ -1,6 +1,7 @@
 package dev.chanler.shortlink.service.impl;
 
 import cn.hutool.core.bean.BeanUtil;
+import cn.hutool.core.collection.CollUtil;
 import cn.hutool.core.date.DateUtil;
 import cn.hutool.core.lang.UUID;
 import cn.hutool.core.text.StrBuilder;
@@ -8,7 +9,6 @@ import cn.hutool.core.util.ArrayUtil;
 import cn.hutool.core.util.StrUtil;
 import com.alibaba.fastjson2.JSON;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
-import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
@@ -397,14 +397,10 @@ public class LinkServiceImpl extends ServiceImpl<LinkMapper, LinkDO> implements 
     public List<GroupLinkCountQueryRespDTO> listGroupLinkCount(List<String> gidList) {
         // 鉴权：校验分组列表归属
         groupOwnershipService.assertAllOwnedByCurrentUser(gidList);
-        QueryWrapper<LinkDO> queryWrapper = Wrappers.query(new LinkDO())
-                .select("gid as gid, count(*) as shortLinkCount")
-                .in("gid", gidList)
-                .eq("enable_status", 0)
-                .eq("del_flag", 0)
-                .groupBy("gid");
-        List<Map<String, Object>> shortLinkDOList = baseMapper.selectMaps(queryWrapper);
-        return BeanUtil.copyToList(shortLinkDOList, GroupLinkCountQueryRespDTO.class);
+        if (CollUtil.isEmpty(gidList)) {
+            return Collections.emptyList();
+        }
+        return baseMapper.listGroupLinkCount(gidList);
     }
 
     @SneakyThrows

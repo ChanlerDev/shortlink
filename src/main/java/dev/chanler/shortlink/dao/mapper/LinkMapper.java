@@ -4,9 +4,12 @@ import com.baomidou.mybatisplus.core.mapper.BaseMapper;
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import dev.chanler.shortlink.dao.entity.LinkDO;
 import dev.chanler.shortlink.dto.req.LinkPageReqDTO;
+import dev.chanler.shortlink.dto.resp.GroupLinkCountQueryRespDTO;
 import org.apache.ibatis.annotations.Param;
 import org.apache.ibatis.annotations.Select;
 import org.apache.ibatis.annotations.Update;
+
+import java.util.List;
 
 /**
  * 短链接持久层
@@ -51,4 +54,24 @@ public interface LinkMapper extends BaseMapper<LinkDO> {
             </script>
             """)
     IPage<LinkDO> pageLink(@Param("p") LinkPageReqDTO linkPageReqDTO);
+
+    /**
+     * 查询分组短链接数量
+     */
+    @Select("""
+            <script>
+            SELECT
+                gid AS gid,
+                COUNT(*) AS linkCount
+            FROM t_link
+            WHERE gid IN
+            <foreach item="gid" collection="gidList" open="(" separator="," close=")">
+                #{gid}
+            </foreach>
+              AND enable_status = 0
+              AND del_flag = 0
+            GROUP BY gid
+            </script>
+            """)
+    List<GroupLinkCountQueryRespDTO> listGroupLinkCount(@Param("gidList") List<String> gidList);
 }
