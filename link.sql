@@ -945,5 +945,5 @@ CREATE TABLE `t_api_token`
     `del_flag`      tinyint      NOT NULL DEFAULT 0 COMMENT '删除标识 0未删 1已删',
     PRIMARY KEY (`id`),
     UNIQUE KEY `uk_token_hash` (`token_hash`) USING BTREE,
-    KEY `idx_username` (`username`) USING BTREE,
+    KEY `idx_username` (`username`) USING BTREE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='API 访问令牌';
