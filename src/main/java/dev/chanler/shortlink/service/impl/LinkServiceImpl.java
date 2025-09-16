@@ -13,14 +13,17 @@ import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
+import dev.chanler.shortlink.common.biz.user.GroupOwnershipVerifier;
 import dev.chanler.shortlink.common.biz.user.UserContext;
 import dev.chanler.shortlink.common.config.GotoDomainWhiteListConfiguration;
-import dev.chanler.shortlink.common.biz.user.GroupOwnershipVerifier;
 import dev.chanler.shortlink.common.convention.exception.ClientException;
 import dev.chanler.shortlink.common.convention.exception.ServiceException;
 import dev.chanler.shortlink.common.enums.ValidDateTypeEnum;
-import dev.chanler.shortlink.dao.entity.*;
-import dev.chanler.shortlink.dao.mapper.*;
+import dev.chanler.shortlink.dao.entity.LinkDO;
+import dev.chanler.shortlink.dao.entity.LinkGotoDO;
+import dev.chanler.shortlink.dao.mapper.LinkAccessStatsMapper;
+import dev.chanler.shortlink.dao.mapper.LinkGotoMapper;
+import dev.chanler.shortlink.dao.mapper.LinkMapper;
 import dev.chanler.shortlink.dto.biz.LinkStatsRecordDTO;
 import dev.chanler.shortlink.dto.req.LinkBatchCreateReqDTO;
 import dev.chanler.shortlink.dto.req.LinkCreateReqDTO;
@@ -29,11 +32,9 @@ import dev.chanler.shortlink.dto.req.LinkUpdateReqDTO;
 import dev.chanler.shortlink.dto.resp.*;
 import dev.chanler.shortlink.mq.producer.LinkStatsSaveProducer;
 import dev.chanler.shortlink.service.LinkService;
-import dev.chanler.shortlink.toolkit.HashUtil;
 import dev.chanler.shortlink.toolkit.LinkUtil;
 import dev.chanler.shortlink.toolkit.ShortCodeUtil;
-import dev.chanler.shortlink.toolkit.ipgeo.GeoInfo;
-import dev.chanler.shortlink.toolkit.ipgeo.IpGeoClient;
+import jakarta.annotation.PostConstruct;
 import jakarta.servlet.ServletRequest;
 import jakarta.servlet.ServletResponse;
 import jakarta.servlet.http.Cookie;
@@ -47,23 +48,21 @@ import org.redisson.api.RLock;
 import org.redisson.api.RReadWriteLock;
 import org.redisson.api.RedissonClient;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.core.io.ClassPathResource;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.data.redis.core.script.DefaultRedisScript;
+import org.springframework.scripting.support.ResourceScriptSource;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.io.InputStream;
-import java.io.InputStreamReader;
-import java.net.HttpURLConnection;
-import java.net.URL;
-import java.nio.charset.StandardCharsets;
+import java.time.LocalDate;
+import java.time.ZoneId;
 import java.util.*;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
 
+import static dev.chanler.shortlink.common.constant.LinkConstant.UV_COOKIE_MAX_AGE_SECONDS;
 import static dev.chanler.shortlink.common.constant.RedisKeyConstant.*;
 import static dev.chanler.shortlink.common.constant.UserConstant.PUBLIC_GID;
 import static dev.chanler.shortlink.common.constant.UserConstant.PUBLIC_USERNAME;
@@ -82,20 +81,23 @@ public class LinkServiceImpl extends ServiceImpl<LinkMapper, LinkDO> implements 
     private final StringRedisTemplate stringRedisTemplate;
     private final RedissonClient redissonClient;
     private final LinkAccessStatsMapper linkAccessStatsMapper;
-    private final LinkLocaleStatsMapper linkLocaleStatsMapper;
-    private final IpGeoClient ipGeoClient;
-    private final LinkOsStatsMapper linkOsStatsMapper;
-    private final LinkBrowserStatsMapper linkBrowserStatsMapper;
-    private final LinkAccessLogsMapper linkAccessLogsMapper;
-    private final LinkDeviceStatsMapper linkDeviceStatsMapper;
-    private final LinkNetworkStatsMapper linkNetworkStatsMapper;
-    private final LinkStatsTodayMapper linkStatsTodayMapper;
     private final GotoDomainWhiteListConfiguration gotoDomainWhiteListConfiguration;
     private final LinkStatsSaveProducer linkStatsSaveProducer;
     private final GroupOwnershipVerifier groupOwnershipService;
+    private final LinkUtil linkUtil;
+
+    private DefaultRedisScript<List> hllBatchScript;
+    private static final String HLL_PFCOUNT_BATCH_LUA = "lua/hll_pfcount_batch.lua";
 
     @Value("${short-link.domain.default}")
     private String createLinkDefaultDomain;
+
+    @PostConstruct
+    public void init() {
+        hllBatchScript = new DefaultRedisScript<>();
+        hllBatchScript.setScriptSource(new ResourceScriptSource(new ClassPathResource(HLL_PFCOUNT_BATCH_LUA)));
+        hllBatchScript.setResultType(List.class);
+    }
 
     @Transactional(rollbackFor = Exception.class)
     @Override
@@ -155,7 +157,7 @@ public class LinkServiceImpl extends ServiceImpl<LinkMapper, LinkDO> implements 
                 .totalUip(0)
                 .delTime(0L)
                 .fullShortUrl(fullShortUrl)
-                .favicon(getFavicon(linkCreateReqDTO.getOriginUrl()))
+                .favicon(linkUtil.getFavicon(linkCreateReqDTO.getOriginUrl()))
                 .build();
         LinkGotoDO linkGotoDO = LinkGotoDO.builder()
                 .fullShortUrl(fullShortUrl)
@@ -211,7 +213,7 @@ public class LinkServiceImpl extends ServiceImpl<LinkMapper, LinkDO> implements 
             LinkDO linkDO = LinkDO.builder()
                     .domain(hasLinkDO.getDomain())
                     .shortUri(hasLinkDO.getShortUri())
-                    .favicon(Objects.equals(linkUpdateReqDTO.getOriginUrl(), hasLinkDO.getOriginUrl()) ? hasLinkDO.getFavicon() : getFavicon(linkUpdateReqDTO.getOriginUrl()))
+                    .favicon(Objects.equals(linkUpdateReqDTO.getOriginUrl(), hasLinkDO.getOriginUrl()) ? hasLinkDO.getFavicon() : linkUtil.getFavicon(linkUpdateReqDTO.getOriginUrl()))
                     .createdType(hasLinkDO.getCreatedType())
                     .gid(linkUpdateReqDTO.getGid())
                     .originUrl(linkUpdateReqDTO.getOriginUrl())
@@ -250,7 +252,7 @@ public class LinkServiceImpl extends ServiceImpl<LinkMapper, LinkDO> implements 
                         .totalUv(hasLinkDO.getTotalUv())
                         .totalUip(hasLinkDO.getTotalUip())
                         .fullShortUrl(hasLinkDO.getFullShortUrl())
-                        .favicon(Objects.equals(linkUpdateReqDTO.getOriginUrl(), hasLinkDO.getOriginUrl()) ? hasLinkDO.getFavicon() : getFavicon(linkUpdateReqDTO.getOriginUrl()))
+                        .favicon(Objects.equals(linkUpdateReqDTO.getOriginUrl(), hasLinkDO.getOriginUrl()) ? hasLinkDO.getFavicon() : linkUtil.getFavicon(linkUpdateReqDTO.getOriginUrl()))
                         .delTime(0L)
                         .build();
                 baseMapper.insert(linkDO);
@@ -283,11 +285,107 @@ public class LinkServiceImpl extends ServiceImpl<LinkMapper, LinkDO> implements 
         // 鉴权：校验分组归属
         groupOwnershipService.assertOwnedByCurrentUser(linkPageReqDTO.getGid());
         IPage<LinkDO> resultPage = baseMapper.pageLink(linkPageReqDTO);
+        
+        // 获取所有短链接列表以批量计算今日 UV/UIP
+        List<String> fullShortUrls = resultPage.getRecords().stream()
+                .map(LinkDO::getFullShortUrl)
+                .toList();
+        
+        // 使用批量 Lua 脚本获取今日 UV/UIP
+        Map<String, int[]> todayStatsMap = batchGetTodayStats(fullShortUrls);
+        
         return resultPage.convert(each -> {
             LinkPageRespDTO bean = BeanUtil.toBean(each, LinkPageRespDTO.class);
             bean.setDomain("http://" + bean.getDomain());
+            
+            // 设置今日统计
+            int[] todayStats = todayStatsMap.get(each.getFullShortUrl());
+            if (todayStats != null) {
+                bean.setTodayPv(todayStats[0]);
+                bean.setTodayUv(todayStats[1]);
+                bean.setTodayUip(todayStats[2]);
+            } else {
+                bean.setTodayPv(0);
+                bean.setTodayUv(0);
+                bean.setTodayUip(0);
+            }
+            
             return bean;
         });
+    }
+
+    /**
+     * 批量获取今日统计数据
+     */
+    private Map<String, int[]> batchGetTodayStats(List<String> fullShortUrls) {
+        Map<String, int[]> resultMap = new HashMap<>();
+        
+        if (fullShortUrls == null || fullShortUrls.isEmpty()) {
+            return resultMap;
+        }
+        
+        // 计算 v = epochDay(Asia/Shanghai) % 2
+        int v = (int)(LocalDate.now(ZoneId.of("Asia/Shanghai")).toEpochDay() % 2);
+        
+        String uvPrefix = String.format(STATS_UV_PREFIX, v);
+        String uipPrefix = String.format(STATS_UIP_PREFIX, v);
+        String fsuList = String.join(",", fullShortUrls);
+        
+        try {
+            // 批量获取 UV 数据
+            List<Object> uvResults = stringRedisTemplate.execute(hllBatchScript, 
+                Arrays.asList(uvPrefix), fsuList);
+            
+            // 批量获取 UIP 数据
+            List<Object> uipResults = stringRedisTemplate.execute(hllBatchScript, 
+                Arrays.asList(uipPrefix), fsuList);
+            
+            // 合并结果
+            for (int i = 0; i < fullShortUrls.size(); i++) {
+                String fullShortUrl = fullShortUrls.get(i);
+                
+                int todayUv = 0;
+                int todayUip = 0;
+                
+                if (uvResults != null && i < uvResults.size()) {
+                    Object uvObj = uvResults.get(i);
+                    todayUv = uvObj instanceof Number ? ((Number) uvObj).intValue() : 0;
+                }
+                
+                if (uipResults != null && i < uipResults.size()) {
+                    Object uipObj = uipResults.get(i);
+                    todayUip = uipObj instanceof Number ? ((Number) uipObj).intValue() : 0;
+                }
+                
+                // 获取今日 PV
+                int todayPv = getTodayPvFromStats(fullShortUrl);
+                
+                resultMap.put(fullShortUrl, new int[]{todayPv, todayUv, todayUip});
+            }
+        } catch (Exception e) {
+            log.warn("Failed to batch get today stats, returning empty map", e);
+        }
+        
+        return resultMap;
+    }
+
+    /**
+     * 从 stats 表获取今日 PV
+     */
+    private int getTodayPvFromStats(String fullShortUrl) {
+        try {
+            // 使用 Asia/Shanghai 时区计算今日窗口
+            ZoneId shanghaiZone = ZoneId.of("Asia/Shanghai");
+            LocalDate today = LocalDate.now(shanghaiZone);
+            Date startOfDay = Date.from(today.atStartOfDay(shanghaiZone).toInstant());
+            Date now = new Date();
+            
+            // 从 stats 表查询今日 PV 总数
+            return linkAccessStatsMapper.sumTodayPvByShortUrl(fullShortUrl, startOfDay, now);
+        } catch (Exception e) {
+            log.warn("Failed to get today PV from stats for {}, returning 0", fullShortUrl, e);
+            return 0;
+        }
     }
 
     @Override
@@ -412,28 +510,22 @@ public class LinkServiceImpl extends ServiceImpl<LinkMapper, LinkDO> implements 
     }
 
     private LinkStatsRecordDTO buildLinkStatsRecordAndSetUser(String fullShortUrl, ServletRequest request, ServletResponse response) {
-        AtomicBoolean uvFirstFlag = new AtomicBoolean();
         Cookie[] cookies = ((HttpServletRequest) request).getCookies();
         AtomicReference<String> uv = new AtomicReference<>();
+        // UV Cookie 最大保留 3 个月（从常量类提取）
         Runnable addResponseCookieTask = () -> {
             uv.set(UUID.fastUUID().toString());
             Cookie uvCookie = new Cookie("uv", uv.get());
-            uvCookie.setMaxAge(60 * 60 * 24 * 30);
+            uvCookie.setMaxAge(UV_COOKIE_MAX_AGE_SECONDS);
             uvCookie.setPath(StrUtil.sub(fullShortUrl, fullShortUrl.indexOf("/"), fullShortUrl.length()));
             ((HttpServletResponse) response).addCookie(uvCookie);
-            uvFirstFlag.set(Boolean.TRUE);
-            stringRedisTemplate.opsForSet().add(String.format(SHORT_LINK_STATS_UV_KEY, fullShortUrl), uv.get());
         };
         if (ArrayUtil.isNotEmpty(cookies)) {
             Arrays.stream(cookies)
                     .filter(each -> Objects.equals(each.getName(), "uv"))
                     .findFirst()
                     .map(Cookie::getValue)
-                    .ifPresentOrElse(each -> {
-                        uv.set(each);
-                        Long uvAdded = stringRedisTemplate.opsForSet().add(String.format(SHORT_LINK_STATS_UV_KEY, fullShortUrl), each);
-                        uvFirstFlag.set(uvAdded != null && uvAdded > 0L);
-                    }, addResponseCookieTask);
+                    .ifPresentOrElse(uv::set, addResponseCookieTask);
         } else {
             addResponseCookieTask.run();
         }
@@ -441,13 +533,9 @@ public class LinkServiceImpl extends ServiceImpl<LinkMapper, LinkDO> implements 
         String os = LinkUtil.getOs(((HttpServletRequest) request));
         String browser = LinkUtil.getBrowser(((HttpServletRequest) request));
         String device = LinkUtil.getDevice(((HttpServletRequest) request));
-        Long uipAdded = stringRedisTemplate.opsForSet().add(String.format(SHORT_LINK_STATS_UIP_KEY, fullShortUrl), uip);
-        boolean uipFirstFlag = uipAdded != null && uipAdded > 0L;
         return LinkStatsRecordDTO.builder()
                 .fullShortUrl(fullShortUrl)
                 .uv(uv.get())
-                .uvFirstFlag(uvFirstFlag.get())
-                .uipFirstFlag(uipFirstFlag)
                 .uip(uip)
                 .os(os)
                 .browser(browser)
@@ -461,213 +549,6 @@ public class LinkServiceImpl extends ServiceImpl<LinkMapper, LinkDO> implements 
         Map<String, String> producerMap = new HashMap<>();
         producerMap.put("statsRecord", JSON.toJSONString(linkStatsRecordDTO));
         linkStatsSaveProducer.send(producerMap);
-    }
-
-    private void oldLinkStats(String fullShortUrl, ServletRequest request, ServletResponse response) {
-        AtomicBoolean uvFirstFlag = new AtomicBoolean();
-        Cookie[] cookies = ((HttpServletRequest) request).getCookies();
-        try {
-            AtomicReference<String> uv = new AtomicReference<>();
-            Runnable addResponseCookieTask = () -> {
-                uv.set(UUID.fastUUID().toString());
-                Cookie uvCookie = new Cookie("uv", uv.get());
-                uvCookie.setMaxAge(60 * 60 * 24 * 30);
-                uvCookie.setPath(StrUtil.sub(fullShortUrl, fullShortUrl.indexOf("/"), fullShortUrl.length()));
-                ((HttpServletResponse) response).addCookie(uvCookie);
-                uvFirstFlag.set(Boolean.TRUE);
-                stringRedisTemplate.opsForSet().add("short-link:stats:uv:" + fullShortUrl, uv.get());
-            };
-            if (ArrayUtil.isNotEmpty(cookies)) {
-                Arrays.stream(cookies)
-                        .filter(cookie -> Objects.equals(cookie.getName(), "uv"))
-                        .findFirst()
-                        .map(Cookie::getValue)
-                        .ifPresentOrElse(cookie -> {
-                            uv.set(cookie);
-                            Long uvAdded = stringRedisTemplate.opsForSet().add("short-link:stats:uv:" + fullShortUrl, cookie);
-                            uvFirstFlag.set(uvAdded != null && uvAdded > 0L);
-                        }, addResponseCookieTask);
-            } else {
-                addResponseCookieTask.run();
-            }
-            String uip = LinkUtil.getActualIp(((HttpServletRequest) request));
-            Long uipAdded = stringRedisTemplate.opsForSet().add("short-link:stats:uip:" + fullShortUrl, uip);
-            Boolean uipFirstFlag = uipAdded != null && uipAdded > 0L;
-            int hour = DateUtil.hour(new Date(), true);
-            int weekDay = DateUtil.dayOfWeekEnum(new Date()).getIso8601Value();
-            LinkAccessStatsDO linkAccessStats = LinkAccessStatsDO.builder()
-                    .pv(1)
-                    .uv(uvFirstFlag.get() ? 1 : 0)
-                    .uip(uipFirstFlag ? 1 : 0)
-                    .hour(hour)
-                    .weekday(weekDay)
-                    .fullShortUrl(fullShortUrl)
-                    .date(new Date())
-                    .build();
-            linkAccessStatsMapper.shortLinkAccessStats(linkAccessStats);
-            GeoInfo geoInfo = ipGeoClient.query(uip);
-            LinkLocaleStatsDO linkLocaleStatsDO = LinkLocaleStatsDO.builder()
-                    .fullShortUrl(fullShortUrl)
-                    .date(new Date())
-                    .cnt(1)
-                    .province(geoInfo.getProvince())
-                    .city(geoInfo.getCity())
-                    .adcode(geoInfo.getAdcode())
-                    .country(geoInfo.getCountry())
-                    .build();
-            linkLocaleStatsMapper.shortLinkLocaleStats(linkLocaleStatsDO);
-
-            String os = LinkUtil.getOs((HttpServletRequest) request);
-            LinkOsStatsDO linkOsStatsDO = LinkOsStatsDO.builder()
-                    .fullShortUrl(fullShortUrl)
-                    .date(new Date())
-                    .cnt(1)
-                    .os(os)
-                    .build();
-            linkOsStatsMapper.shortLinkOsStats(linkOsStatsDO);
-
-            String browser = LinkUtil.getBrowser((HttpServletRequest) request);
-            LinkBrowserStatsDO linkBrowserStatsDO = LinkBrowserStatsDO.builder()
-                    .fullShortUrl(fullShortUrl)
-                    .date(new Date())
-                    .cnt(1)
-                    .browser(browser)
-                    .build();
-            linkBrowserStatsMapper.shortLinkBrowserStats(linkBrowserStatsDO);
-
-            String device = LinkUtil.getDevice((HttpServletRequest) request);
-            LinkDeviceStatsDO linkDeviceStatsDO = LinkDeviceStatsDO.builder()
-                    .fullShortUrl(fullShortUrl)
-                    .date(new Date())
-                    .cnt(1)
-                    .device(device)
-                    .build();
-            linkDeviceStatsMapper.shortLinkDeviceStats(linkDeviceStatsDO);
-
-            String network = LinkUtil.getNetwork(geoInfo);
-            LinkNetworkStatsDO linkNetworkStatsDO = LinkNetworkStatsDO.builder()
-                    .fullShortUrl(fullShortUrl)
-                    .date(new Date())
-                    .cnt(1)
-                    .network(network)
-                    .build();
-            linkNetworkStatsMapper.shortLinkNetworkStats(linkNetworkStatsDO);
-
-            LinkAccessLogsDO linkAccessLogsDO = LinkAccessLogsDO.builder()
-                    .fullShortUrl(fullShortUrl)
-                    .user(uv.get())
-                    .browser(browser)
-                    .os(os)
-                    .ip(uip)
-                    .network(network)
-                    .device(device)
-                    .locale(StrBuilder.create(geoInfo.getCountry())
-                            .append("-")
-                            .append(geoInfo.getProvince())
-                            .append("-")
-                            .append(geoInfo.getCity())
-                            .toString())
-                    .build();
-            linkAccessLogsMapper.insert(linkAccessLogsDO);
-
-            String gid = linkGotoMapper.selectOne(Wrappers.lambdaQuery(LinkGotoDO.class)
-                            .select(LinkGotoDO::getGid)
-                            .eq(LinkGotoDO::getFullShortUrl, fullShortUrl)).getGid();
-            baseMapper.incrementStats(gid, fullShortUrl, 1, uvFirstFlag.get() ? 1 : 0, uipFirstFlag ? 1 : 0);
-            LinkStatsTodayDO linkStatsTodayDO = LinkStatsTodayDO.builder()
-                    .todayPv(1)
-                    .todayUv(uvFirstFlag.get() ? 1 : 0)
-                    .todayUip(uipFirstFlag ? 1 : 0)
-                    .fullShortUrl(fullShortUrl)
-                    .date(new Date())
-                    .build();
-            linkStatsTodayMapper.shortLinkTodayStats(linkStatsTodayDO);
-        } catch (Exception e) {
-            log.error("短链接访问统计失败，fullShortUrl: {}", fullShortUrl, e);
-        }
-    }
-
-    private String getFavicon(String url) {
-        if (StrUtil.isBlank(url)) {
-            return null;
-        }
-        try {
-            if (!url.startsWith("http://") && !url.startsWith("https://")) {
-                url = "http://" + url;
-            }
-            URL u = new URL(url);
-            String protocol = u.getProtocol();
-            String host = u.getHost();
-            int port = u.getPort();
-            StringBuilder base = new StringBuilder()
-                    .append(protocol).append("://").append(host);
-            if (port > 0 && port != u.getDefaultPort()) {
-                base.append(":").append(port);
-            }
-            String baseUrl = base.toString();
-
-            // 抓取页面 HTML（限 32KB）
-            String html = null;
-            try {
-                HttpURLConnection conn = (HttpURLConnection) new URL(url).openConnection();
-                conn.setConnectTimeout(2000);
-                conn.setReadTimeout(2000);
-                conn.setInstanceFollowRedirects(true);
-                conn.setRequestProperty("User-Agent", "Mozilla/5.0");
-                int code = conn.getResponseCode();
-                if (code >= 200 && code < 300) {
-                    StringBuilder sb = new StringBuilder();
-                    try (InputStream in = conn.getInputStream();
-                         InputStreamReader reader = new InputStreamReader(in, StandardCharsets.UTF_8)) {
-                        char[] buf = new char[4096];
-                        int len;
-                        int total = 0;
-                        while ((len = reader.read(buf)) != -1 && total < 32768) {
-                            sb.append(buf, 0, len);
-                            total += len;
-                        }
-                    }
-                    html = sb.toString();
-                }
-            } catch (Exception ignore) {
-            }
-
-            // 解析 <link rel="icon"...>
-            if (StrUtil.isNotBlank(html)) {
-                Pattern p = Pattern.compile("(?i)<link[^>]+rel=[\"'](?:shortcut\\s+)?icon[\"'][^>]*href=[\"']([^\"']+)[\"']");
-                Matcher m = p.matcher(html);
-                if (m.find()) {
-                    String iconHref = m.group(1).trim();
-                    if (iconHref.startsWith("http://") || iconHref.startsWith("https://")) {
-                        return iconHref;
-                    } else if (iconHref.startsWith("//")) {
-                        return protocol + ":" + iconHref;
-                    } else if (iconHref.startsWith("/")) {
-                        return baseUrl + iconHref;
-                    } else {
-                        return baseUrl + "/" + iconHref;
-                    }
-                }
-            }
-
-            // 回退尝试 /favicon.ico
-            String fallback = baseUrl + "/favicon.ico";
-            try {
-                HttpURLConnection c = (HttpURLConnection) new URL(fallback).openConnection();
-                c.setRequestMethod("GET"); // 有些站点不支持 HEAD
-                c.setConnectTimeout(1500);
-                c.setReadTimeout(1500);
-                c.setRequestProperty("User-Agent", "Mozilla/5.0");
-                int code = c.getResponseCode();
-                String ct = c.getContentType();
-                if (code >= 200 && code < 300 && ct != null && ct.toLowerCase().startsWith("image")) {
-                    return fallback;
-                }
-            } catch (Exception ignore) {
-            }
-        } catch (Exception e) {
-        }
-        return null;
     }
 
     private void verificationWhitelist(String originUrl) {

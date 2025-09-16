@@ -8,9 +8,7 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
-import dev.chanler.shortlink.common.biz.user.UserContext;
 import dev.chanler.shortlink.common.biz.user.GroupOwnershipVerifier;
-import dev.chanler.shortlink.common.convention.exception.ServiceException;
 import dev.chanler.shortlink.dao.entity.*;
 import dev.chanler.shortlink.dao.mapper.*;
 import dev.chanler.shortlink.dto.req.GroupStatsAccessRecordReqDTO;
@@ -20,6 +18,7 @@ import dev.chanler.shortlink.dto.req.LinkStatsReqDTO;
 import dev.chanler.shortlink.dto.resp.*;
 import dev.chanler.shortlink.service.LinkStatsService;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
 import java.util.*;
@@ -29,6 +28,7 @@ import java.util.concurrent.atomic.AtomicInteger;
  * 访问统计接口实现层
  * @author: Chanler
  */
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class LinkStatsServiceImpl implements LinkStatsService {
@@ -279,37 +279,57 @@ public class LinkStatsServiceImpl implements LinkStatsService {
     @Override
     public LinkStatsRespDTO groupShortLinkStats(GroupStatsReqDTO groupStatsReqDTO) {
         groupOwnershipService.assertOwnedByCurrentUser(groupStatsReqDTO.getGid());
-        List<LinkAccessStatsDO> listStatsByGroup = linkAccessStatsMapper.listStatsByGroup(groupStatsReqDTO);
-        if (CollUtil.isEmpty(listStatsByGroup)) {
-            return null;
-        }
-        // 基础访问数据
-        LinkAccessStatsDO pvUvUidStatsByGroup = linkAccessLogsMapper.findPvUvUidStatsByGroup(groupStatsReqDTO);
-        // 基础访问详情
+        List<LinkAccessStatsDO> listStatsByGroup = Optional.ofNullable(linkAccessStatsMapper.listStatsByGroup(groupStatsReqDTO))
+                .orElse(Collections.emptyList());
+
+        int totalPv = listStatsByGroup.stream()
+                .mapToInt(item -> Optional.ofNullable(item.getPv()).orElse(0))
+                .sum();
+        int totalUv = listStatsByGroup.stream()
+                .mapToInt(item -> Optional.ofNullable(item.getUv()).orElse(0))
+                .sum();
+        int totalUip = listStatsByGroup.stream()
+                .mapToInt(item -> Optional.ofNullable(item.getUip()).orElse(0))
+                .sum();
+
+        // 基础访问详情（即使 listStatsByGroup 为空也继续构造）
         List<LinkStatsAccessDailyRespDTO> daily = new ArrayList<>();
         List<String> rangeDates = DateUtil.rangeToList(DateUtil.parse(groupStatsReqDTO.getStartDate()), DateUtil.parse(groupStatsReqDTO.getEndDate()), DateField.DAY_OF_MONTH).stream()
                 .map(DateUtil::formatDate)
                 .toList();
-        rangeDates.forEach(each -> listStatsByGroup.stream()
-                .filter(item -> Objects.equals(each, DateUtil.formatDate(item.getDate())))
-                .findFirst()
-                .ifPresentOrElse(item -> {
-                    LinkStatsAccessDailyRespDTO accessDailyRespDTO = LinkStatsAccessDailyRespDTO.builder()
-                            .date(each)
-                            .pv(item.getPv())
-                            .uv(item.getUv())
-                            .uip(item.getUip())
-                            .build();
-                    daily.add(accessDailyRespDTO);
-                }, () -> {
-                    LinkStatsAccessDailyRespDTO accessDailyRespDTO = LinkStatsAccessDailyRespDTO.builder()
-                            .date(each)
-                            .pv(0)
-                            .uv(0)
-                            .uip(0)
-                            .build();
-                    daily.add(accessDailyRespDTO);
-                }));
+        rangeDates.forEach(each -> {
+            if (CollUtil.isNotEmpty(listStatsByGroup)) {
+                listStatsByGroup.stream()
+                        .filter(item -> Objects.equals(each, DateUtil.formatDate(item.getDate())))
+                        .findFirst()
+                        .ifPresentOrElse(item -> {
+                            LinkStatsAccessDailyRespDTO accessDailyRespDTO = LinkStatsAccessDailyRespDTO.builder()
+                                    .date(each)
+                                    .pv(item.getPv())
+                                    .uv(item.getUv())
+                                    .uip(item.getUip())
+                                    .build();
+                            daily.add(accessDailyRespDTO);
+                        }, () -> {
+                            LinkStatsAccessDailyRespDTO accessDailyRespDTO = LinkStatsAccessDailyRespDTO.builder()
+                                    .date(each)
+                                    .pv(0)
+                                    .uv(0)
+                                    .uip(0)
+                                    .build();
+                            daily.add(accessDailyRespDTO);
+                        });
+            } else {
+                // listStatsByGroup 为空时，所有日期返回0
+                LinkStatsAccessDailyRespDTO accessDailyRespDTO = LinkStatsAccessDailyRespDTO.builder()
+                        .date(each)
+                        .pv(0)
+                        .uv(0)
+                        .uip(0)
+                        .build();
+                daily.add(accessDailyRespDTO);
+            }
+        });
         // 地区访问详情（仅国内）
         List<LinkStatsLocaleCNRespDTO> localeCnStats = new ArrayList<>();
         List<LinkLocaleStatsDO> listedLocaleByGroup = linkLocaleStatsMapper.listLocaleByGroup(groupStatsReqDTO);
@@ -328,7 +348,9 @@ public class LinkStatsServiceImpl implements LinkStatsService {
         });
         // 小时访问详情
         List<Integer> hourStats = new ArrayList<>();
-        List<LinkAccessStatsDO> listHourStatsByGroup = linkAccessStatsMapper.listHourStatsByGroup(groupStatsReqDTO);
+        List<LinkAccessStatsDO> listHourStatsByGroup = CollUtil.isNotEmpty(listStatsByGroup) 
+                ? linkAccessStatsMapper.listHourStatsByGroup(groupStatsReqDTO)
+                : new ArrayList<>();
         for (int i = 0; i < 24; i++) {
             AtomicInteger hour = new AtomicInteger(i);
             int hourCnt = listHourStatsByGroup.stream()
@@ -350,7 +372,9 @@ public class LinkStatsServiceImpl implements LinkStatsService {
         });
         // 一周访问详情
         List<Integer> weekdayStats = new ArrayList<>();
-        List<LinkAccessStatsDO> listWeekdayStatsByGroup = linkAccessStatsMapper.listWeekdayStatsByGroup(groupStatsReqDTO);
+        List<LinkAccessStatsDO> listWeekdayStatsByGroup = CollUtil.isNotEmpty(listStatsByGroup)
+                ? linkAccessStatsMapper.listWeekdayStatsByGroup(groupStatsReqDTO)
+                : new ArrayList<>();
         for (int i = 1; i < 8; i++) {
             AtomicInteger weekday = new AtomicInteger(i);
             int weekdayCnt = listWeekdayStatsByGroup.stream()
@@ -424,10 +448,11 @@ public class LinkStatsServiceImpl implements LinkStatsService {
                     .build();
             networkStats.add(networkRespDTO);
         });
+        
         return LinkStatsRespDTO.builder()
-                .pv(pvUvUidStatsByGroup.getPv())
-                .uv(pvUvUidStatsByGroup.getUv())
-                .uip(pvUvUidStatsByGroup.getUip())
+                .pv(totalPv)
+                .uv(totalUv)
+                .uip(totalUip)
                 .daily(daily)
                 .localeCnStats(localeCnStats)
                 .hourStats(hourStats)

@@ -19,9 +19,9 @@ public class ShortCodeProps {
     private Integer length = 6;
 
     /**
-     *号段步长：每次从 Redis 预取的数量（默认 100000）
+     *号段步长：每次从 Redis 预取的数量（默认 10000）
      */
-    private Long segmentStep = 100_000L;
+    private Long segmentStep = 10_000L;
 
     /**
      * 预取阈值占比：剩余量 <= step*ratio 时触发预取（默认 0.2）

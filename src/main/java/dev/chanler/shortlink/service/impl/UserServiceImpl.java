@@ -8,12 +8,12 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
-import dev.chanler.shortlink.common.convention.exception.ClientException;
 import dev.chanler.shortlink.common.convention.errorcode.BaseErrorCode;
-import dev.chanler.shortlink.dao.entity.UserDO;
+import dev.chanler.shortlink.common.convention.exception.ClientException;
 import dev.chanler.shortlink.dao.entity.GroupDO;
-import dev.chanler.shortlink.dao.mapper.UserMapper;
+import dev.chanler.shortlink.dao.entity.UserDO;
 import dev.chanler.shortlink.dao.mapper.GroupMapper;
+import dev.chanler.shortlink.dao.mapper.UserMapper;
 import dev.chanler.shortlink.dto.req.UserLoginReqDTO;
 import dev.chanler.shortlink.dto.req.UserRegisterReqDTO;
 import dev.chanler.shortlink.dto.req.UserUpdateReqDTO;
@@ -27,11 +27,11 @@ import org.redisson.api.RBloomFilter;
 import org.redisson.api.RLock;
 import org.redisson.api.RedissonClient;
 import org.springframework.beans.BeanUtils;
-import org.springframework.dao.DuplicateKeyException;
-import org.springframework.data.redis.core.script.DefaultRedisScript;
 import org.springframework.core.io.ClassPathResource;
-import org.springframework.scripting.support.ResourceScriptSource;
+import org.springframework.dao.DuplicateKeyException;
 import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.data.redis.core.script.DefaultRedisScript;
+import org.springframework.scripting.support.ResourceScriptSource;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -41,10 +41,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
 
-import static dev.chanler.shortlink.common.constant.RedisKeyConstant.LOCK_USER_REGISTER_KEY;
-import static dev.chanler.shortlink.common.constant.RedisKeyConstant.USER_LOGIN_KEY;
-import static dev.chanler.shortlink.common.constant.RedisKeyConstant.SESSION_KEY;
-import static dev.chanler.shortlink.common.constant.RedisKeyConstant.USER_GIDS_KEY;
+import static dev.chanler.shortlink.common.constant.RedisKeyConstant.*;
 import static dev.chanler.shortlink.common.convention.errorcode.BaseErrorCode.*;
 
 /**

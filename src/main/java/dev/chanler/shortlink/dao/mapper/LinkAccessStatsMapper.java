@@ -8,6 +8,7 @@ import org.apache.ibatis.annotations.Insert;
 import org.apache.ibatis.annotations.Param;
 import org.apache.ibatis.annotations.Select;
 
+import java.util.Date;
 import java.util.List;
 
 /**
@@ -171,4 +172,25 @@ public interface LinkAccessStatsMapper extends BaseMapper<LinkAccessStatsDO> {
             GROUP BY tl.gid, tlas.weekday
             """)
     List<LinkAccessStatsDO> listWeekdayStatsByGroup(@Param("param") GroupStatsReqDTO groupStatsReqDTO);
+
+    /**
+     * 查询单个短链接今日 PV 总数（从 stats 表）
+     * @param fullShortUrl 完整短链接
+     * @param startOfDay 今日开始时间
+     * @param now 当前时间
+     * @return 今日 PV 总数
+     */
+    @Select("""
+            SELECT
+                COALESCE(SUM(pv), 0)
+            FROM t_link_access_stats
+            WHERE full_short_url = #{fullShortUrl}
+              AND tl.del_flag = '0'
+              AND tl.enable_status = '0'
+              AND date BETWEEN #{startOfDay} AND #{now}
+            """)
+    int sumTodayPvByShortUrl(@Param("fullShortUrl") String fullShortUrl,
+                             @Param("startOfDay") Date startOfDay,
+                             @Param("now") Date now);
+
 }

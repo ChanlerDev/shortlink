@@ -37,21 +37,12 @@ public interface LinkMapper extends BaseMapper<LinkDO> {
     @Select("""
             <script>
             SELECT
-                t.*,
-                COALESCE(s.today_pv, 0)  AS todayPv,
-                COALESCE(s.today_uv, 0)  AS todayUv,
-                COALESCE(s.today_uip, 0) AS todayUip
+                t.*
             FROM t_link t
-            LEFT JOIN t_link_stats_today s
-              ON t.full_short_url = s.full_short_url
-             AND s.date = CURDATE()
             WHERE t.gid = #{p.gid}
               AND t.enable_status = 0
               AND t.del_flag = 0
             <choose>
-                <when test="p.orderTag == 'todayPv'">ORDER BY todayPv DESC</when>
-                <when test="p.orderTag == 'todayUv'">ORDER BY todayUv DESC</when>
-                <when test="p.orderTag == 'todayUip'">ORDER BY todayUip DESC</when>
                 <when test="p.orderTag == 'totalPv'">ORDER BY t.total_pv DESC</when>
                 <when test="p.orderTag == 'totalUv'">ORDER BY t.total_uv DESC</when>
                 <when test="p.orderTag == 'totalUip'">ORDER BY t.total_uip DESC</when>

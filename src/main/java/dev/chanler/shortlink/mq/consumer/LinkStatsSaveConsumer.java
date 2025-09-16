@@ -13,22 +13,29 @@ import dev.chanler.shortlink.dto.biz.LinkStatsRecordDTO;
 import dev.chanler.shortlink.mq.idempotent.MessageQueueIdempotentHandler;
 import dev.chanler.shortlink.toolkit.ipgeo.GeoInfo;
 import dev.chanler.shortlink.toolkit.ipgeo.IpGeoClient;
+import jakarta.annotation.PostConstruct;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.redisson.api.RLock;
 import org.redisson.api.RReadWriteLock;
 import org.redisson.api.RedissonClient;
+import org.springframework.core.io.ClassPathResource;
 import org.springframework.data.redis.connection.stream.MapRecord;
 import org.springframework.data.redis.connection.stream.RecordId;
 import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.data.redis.core.script.DefaultRedisScript;
 import org.springframework.data.redis.stream.StreamListener;
+import org.springframework.scripting.support.ResourceScriptSource;
 import org.springframework.stereotype.Component;
 
+import java.time.LocalDate;
+import java.time.ZoneId;
+import java.util.Arrays;
 import java.util.Date;
 import java.util.Map;
 import java.util.Objects;
 
-import static dev.chanler.shortlink.common.constant.RedisKeyConstant.LOCK_GID_UPDATE_KEY;
+import static dev.chanler.shortlink.common.constant.RedisKeyConstant.*;
 
 /**
  * 短链接监控状态保存消息队列消费者
@@ -50,9 +57,19 @@ public class LinkStatsSaveConsumer implements StreamListener<String, MapRecord<S
     private final LinkAccessLogsMapper linkAccessLogsMapper;
     private final LinkDeviceStatsMapper linkDeviceStatsMapper;
     private final LinkNetworkStatsMapper linkNetworkStatsMapper;
-    private final LinkStatsTodayMapper linkStatsTodayMapper;
     private final StringRedisTemplate stringRedisTemplate;
     private final MessageQueueIdempotentHandler messageQueueIdempotentHandler;
+
+    private DefaultRedisScript<Long> hllCountAddDeltaScript;
+
+    private static final String HLL_COUNT_ADD_DELTA_LUA = "lua/hll_count_add_delta.lua";
+
+    @PostConstruct
+    public void init() {
+        hllCountAddDeltaScript = new DefaultRedisScript<>();
+        hllCountAddDeltaScript.setScriptSource(new ResourceScriptSource(new ClassPathResource(HLL_COUNT_ADD_DELTA_LUA)));
+        hllCountAddDeltaScript.setResultType(Long.class);
+    }
 
     @Override
     public void onMessage(MapRecord<String, String, String> message) {
@@ -88,21 +105,41 @@ public class LinkStatsSaveConsumer implements StreamListener<String, MapRecord<S
             LambdaQueryWrapper<LinkGotoDO> queryWrapper = Wrappers.lambdaQuery(LinkGotoDO.class)
                     .eq(LinkGotoDO::getFullShortUrl, fullShortUrl);
             LinkGotoDO shortLinkGotoDO = linkGotoMapper.selectOne(queryWrapper);
+            if (shortLinkGotoDO == null) {
+                log.warn("LinkGotoDO not found for fullShortUrl={}, skip stats persist", fullShortUrl);
+                return;
+            }
             String gid = shortLinkGotoDO.getGid();
             Date currentDate = statsRecord.getCurrentDate();
             int hour = DateUtil.hour(currentDate, true);
             Week week = DateUtil.dayOfWeekEnum(currentDate);
             int weekValue = week.getIso8601Value();
-            LinkAccessStatsDO linkAccessStatsDO = LinkAccessStatsDO.builder()
-                    .pv(1)
-                    .uv(statsRecord.getUvFirstFlag() ? 1 : 0)
-                    .uip(statsRecord.getUipFirstFlag() ? 1 : 0)
-                    .hour(hour)
-                    .weekday(weekValue)
-                    .fullShortUrl(fullShortUrl)
-                    .date(currentDate)
-                    .build();
-            linkAccessStatsMapper.shortLinkAccessStats(linkAccessStatsDO);
+            // 计算 v = epochDay(Asia/Shanghai) % 2（基于事件时间 currentDate）
+            Date ts = currentDate != null ? currentDate : new Date();
+            int v = (int)(LocalDate.ofInstant(ts.toInstant(), ZoneId.of("Asia/Shanghai")).toEpochDay() % 2);
+            
+            // 使用新的 {v} 风格键
+            String uvKey = String.format(STATS_UV_HLL_KEY, v, fullShortUrl);
+            String uipKey = String.format(STATS_UIP_HLL_KEY, v, fullShortUrl);
+            String uvActiveKey = String.format(STATS_UV_ACTIVE_KEY, v);
+            String uipActiveKey = String.format(STATS_UIP_ACTIVE_KEY, v);
+            
+            // TTL 24小时（24 * 3600 = 86400秒）
+            int ttlSeconds = 86400;
+            
+            // 计算 UV delta
+            Long uvDelta = stringRedisTemplate.execute(hllCountAddDeltaScript, 
+                Arrays.asList(uvKey, uvActiveKey), 
+                statsRecord.getUv(), 
+                fullShortUrl, 
+                String.valueOf(ttlSeconds));
+            
+            // 计算 UIP delta
+            Long uipDelta = stringRedisTemplate.execute(hllCountAddDeltaScript, 
+                Arrays.asList(uipKey, uipActiveKey), 
+                statsRecord.getUip(), 
+                fullShortUrl, 
+                String.valueOf(ttlSeconds));
 
             GeoInfo geoInfo = ipGeoClient.query(statsRecord.getUip());
             LinkLocaleStatsDO linkLocaleStatsDO = LinkLocaleStatsDO.builder()
@@ -159,15 +196,23 @@ public class LinkStatsSaveConsumer implements StreamListener<String, MapRecord<S
                     .fullShortUrl(fullShortUrl)
                     .build();
             linkAccessLogsMapper.insert(linkAccessLogsDO);
-            linkMapper.incrementStats(gid, fullShortUrl, 1, statsRecord.getUvFirstFlag() ? 1 : 0, statsRecord.getUipFirstFlag() ? 1 : 0);
-            LinkStatsTodayDO linkStatsTodayDO = LinkStatsTodayDO.builder()
-                    .todayPv(1)
-                    .todayUv(statsRecord.getUvFirstFlag() ? 1 : 0)
-                    .todayUip(statsRecord.getUipFirstFlag() ? 1 : 0)
+            
+            // 使用 delta 写入明细统计
+            LinkAccessStatsDO linkAccessStatsDOWithDelta = LinkAccessStatsDO.builder()
+                    .pv(1)
+                    .uv(uvDelta != null ? uvDelta.intValue() : 0)
+                    .uip(uipDelta != null ? uipDelta.intValue() : 0)
+                    .hour(hour)
+                    .weekday(weekValue)
                     .fullShortUrl(fullShortUrl)
                     .date(currentDate)
                     .build();
-            linkStatsTodayMapper.shortLinkTodayStats(linkStatsTodayDO);
+            linkAccessStatsMapper.shortLinkAccessStats(linkAccessStatsDOWithDelta);
+            
+            // 更新链接统计，使用计算出的 delta
+            linkMapper.incrementStats(gid, fullShortUrl, 1, 
+                uvDelta != null ? uvDelta.intValue() : 0, 
+                uipDelta != null ? uipDelta.intValue() : 0);
         } finally {
             rLock.unlock();
         }

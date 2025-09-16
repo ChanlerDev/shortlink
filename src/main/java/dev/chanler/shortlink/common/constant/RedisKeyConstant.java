@@ -49,16 +49,10 @@ public class RedisKeyConstant {
     public static final String LOCK_GID_UPDATE_KEY = "short-link:lock:update-gid:%s";
 
     /**
-     * 短链接统计判断是否新用户缓存标识
-     * 格式：short-link:stats:uv:{fullShortUrl}
+     * 短码号段分配全局 Key
+     * 格式：short-link:allocation:global
      */
-    public static final String SHORT_LINK_STATS_UV_KEY = "short-link:stats:uv:%s";
-
-    /**
-     * 短链接统计判断是否新 IP 缓存标识
-     * 格式：short-link:stats:uip:{fullShortUrl}
-     */
-    public static final String SHORT_LINK_STATS_UIP_KEY = "short-link:stats:uip:%s";
+    public static final String SHORT_CODE_ALLOCATION_KEY = "short-link:allocation:global";
 
     /**
      * 短链接幂等操作锁前缀 key
@@ -107,8 +101,42 @@ public class RedisKeyConstant {
     public static final String API_TOKEN_HASH_KEY = "short-link:api-token-h:%s";
 
     /**
-     * 短码号段分配全局 Key
-     * 格式：short-link:allocation:global
+     * 短链接 UV HyperLogLog 缓存标识
+     * 格式：short-link:stats:uv:{v}:{fullShortUrl}
+     * v = epochDay(Asia/Shanghai) % 2
      */
-    public static final String SHORT_CODE_ALLOCATION_KEY = "short-link:allocation:global";
+    public static final String STATS_UV_HLL_KEY = "short-link:stats:uv:%d:%s";
+
+    /**
+     * UV HLL 前缀（批量 PFCOUNT 使用）
+     * 格式：short-link:stats:uv:{v}:
+     */
+    public static final String STATS_UV_PREFIX = "short-link:stats:uv:%d:";
+
+    /**
+     * 短链接 UIP HyperLogLog 缓存标识
+     * 格式：short-link:stats:uip:{v}:{fullShortUrl}
+     * v = epochDay(Asia/Shanghai) % 2
+     */
+    public static final String STATS_UIP_HLL_KEY = "short-link:stats:uip:%d:%s";
+
+    /**
+     * UIP HLL 前缀（批量 PFCOUNT 使用）
+     * 格式：short-link:stats:uip:{v}:
+     */
+    public static final String STATS_UIP_PREFIX = "short-link:stats:uip:%d:";
+
+    /**
+     * UV 活跃集合 key（用于清理）
+     * 格式：short-link:stats:uv:active:{v}
+     * v = epochDay(Asia/Shanghai) % 2
+     */
+    public static final String STATS_UV_ACTIVE_KEY = "short-link:stats:uv:active:%d";
+
+    /**
+     * UIP 活跃集合 key（用于清理）
+     * 格式：short-link:stats:uip:active:{v}
+     * v = epochDay(Asia/Shanghai) % 2
+     */
+    public static final String STATS_UIP_ACTIVE_KEY = "short-link:stats:uip:active:%d";
 }

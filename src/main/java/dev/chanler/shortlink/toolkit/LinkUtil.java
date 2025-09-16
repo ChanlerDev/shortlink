@@ -5,16 +5,23 @@ import cn.hutool.core.date.DateUtil;
 import cn.hutool.core.util.StrUtil;
 import cn.hutool.core.util.URLUtil;
 import com.google.common.net.InternetDomainName;
+import dev.chanler.shortlink.common.config.GotoDomainWhiteListConfiguration;
 import dev.chanler.shortlink.toolkit.ipgeo.GeoInfo;
-import dev.chanler.shortlink.toolkit.ipgeo.IpGeoClient;
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
+import org.springframework.stereotype.Component;
 
+import java.io.InputStream;
+import java.io.InputStreamReader;
+import java.net.HttpURLConnection;
 import java.net.IDN;
 import java.net.URL;
+import java.nio.charset.StandardCharsets;
 import java.util.Date;
 import java.util.Locale;
 import java.util.Optional;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 import static dev.chanler.shortlink.common.constant.LinkConstant.DEFAULT_CACHE_VALID_TIME;
 
@@ -23,9 +30,10 @@ import static dev.chanler.shortlink.common.constant.LinkConstant.DEFAULT_CACHE_V
  * @author: Chanler
  */
 @RequiredArgsConstructor
+@Component
 public class LinkUtil {
 
-    private static IpGeoClient ipGeoClient;
+    private final GotoDomainWhiteListConfiguration whiteListCfg;
 
     /**
      * 获取短链接缓存有效时间
@@ -176,5 +184,125 @@ public class LinkUtil {
             }
         } catch (IllegalArgumentException ignore) {}
         return null;
+    }
+
+    /**
+     * 获取站点 favicon
+     */
+    public String getFavicon(String url) {
+        if (StrUtil.isBlank(url)) return null;
+        String u = url.trim();
+        if (!u.matches("^[a-zA-Z][a-zA-Z0-9+.-]*://.*$")) {
+            u = "http://" + u;
+        }
+        URL parsed = URLUtil.url(u);
+        String scheme = parsed.getProtocol();
+        String host = parsed.getHost();
+        int port = parsed.getPort();
+        if (StrUtil.isBlank(host)) return null;
+
+        String domain = extractDomain(u);
+        // 白名单：使用硬编码映射，避免网络抓取
+        if (whiteListCfg != null && Boolean.TRUE.equals(whiteListCfg.getEnable())
+                && whiteListCfg.getDetails() != null && domain != null
+                && whiteListCfg.getDetails().stream().anyMatch(d -> d.equalsIgnoreCase(domain))) {
+            String mapped = WhitelistFavicons.get(domain);
+            if (mapped != null) return mapped;
+            return "https://" + domain + "/favicon.ico";
+        }
+
+        // 非白名单：保留原有网络抓取逻辑
+        try {
+            String baseUrl;
+            StringBuilder base = new StringBuilder()
+                    .append(scheme).append("://").append(host);
+            if (port > 0 && port != parsed.getDefaultPort()) {
+                base.append(":").append(port);
+            }
+            baseUrl = base.toString();
+
+            // 抓取页面 HTML（限 32KB）
+            String html = null;
+            try {
+                HttpURLConnection conn = (HttpURLConnection) new URL(u).openConnection();
+                conn.setConnectTimeout(2000);
+                conn.setReadTimeout(2000);
+                conn.setInstanceFollowRedirects(true);
+                conn.setRequestProperty("User-Agent", "Mozilla/5.0");
+                int code = conn.getResponseCode();
+                if (code >= 200 && code < 300) {
+                    StringBuilder sb = new StringBuilder();
+                    try (InputStream in = conn.getInputStream();
+                         InputStreamReader reader = new InputStreamReader(in, StandardCharsets.UTF_8)) {
+                        char[] buf = new char[4096];
+                        int len;
+                        int total = 0;
+                        while ((len = reader.read(buf)) != -1 && total < 32768) {
+                            sb.append(buf, 0, len);
+                            total += len;
+                        }
+                    }
+                    html = sb.toString();
+                }
+            } catch (Exception ignore) {}
+
+            // 解析 <link rel="icon" ...>
+            if (StrUtil.isNotBlank(html)) {
+                Pattern p = Pattern.compile("(?i)<link[^>]+rel=[\"'](?:shortcut\\s+)?icon[\"'][^>]*href=[\"']([^\"']+)[\"']");
+                Matcher m = p.matcher(html);
+                if (m.find()) {
+                    String iconHref = m.group(1).trim();
+                    if (iconHref.startsWith("http://") || iconHref.startsWith("https://")) {
+                        return iconHref;
+                    } else if (iconHref.startsWith("//")) {
+                        return scheme + ":" + iconHref;
+                    } else if (iconHref.startsWith("/")) {
+                        return baseUrl + iconHref;
+                    } else {
+                        return baseUrl + "/" + iconHref;
+                    }
+                }
+            }
+
+            // 回退 /favicon.ico（尝试 GET 以确认返回类型）
+            String fallback = baseUrl + "/favicon.ico";
+            try {
+                HttpURLConnection c = (HttpURLConnection) new URL(fallback).openConnection();
+                c.setRequestMethod("GET");
+                c.setConnectTimeout(1500);
+                c.setReadTimeout(1500);
+                c.setRequestProperty("User-Agent", "Mozilla/5.0");
+                int code = c.getResponseCode();
+                String ct = c.getContentType();
+                if (code >= 200 && code < 300 && ct != null && ct.toLowerCase().startsWith("image")) {
+                    return fallback;
+                }
+            } catch (Exception ignore) {}
+        } catch (Exception ignore) {}
+
+        return null;
+    }
+
+    /**
+     * 白名单 favicon 硬编码映射
+     */
+    private static class WhitelistFavicons {
+        private static final java.util.Map<String, String> MAP = new java.util.HashMap<>();
+        static {
+            MAP.put("chanler.dev", "https://chanler.dev/favicon.ico");
+            MAP.put("zhihu.com", "https://www.zhihu.com/favicon.ico");
+            MAP.put("juejin.cn", "https://lf-web-assets.juejin.cn/obj/juejin-web/xitu_juejin_web/static/favicons/favicon-32x32.png");
+            MAP.put("cnblogs.com", "https://www.cnblogs.com/favicon.ico");
+            MAP.put("bilibili.com", "https://www.bilibili.com/favicon.ico");
+            MAP.put("github.com", "https://github.com/favicon.ico");
+            MAP.put("csdn.net", "https://www.csdn.net/favicon.ico");
+            MAP.put("weixin.qq.com", "https://res.wx.qq.com/a/wx_fed/assets/res/NTI4MWU5.ico");
+            MAP.put("qq.com", "https://www.qq.com/favicon.ico");
+            MAP.put("toutiao.com", "https://www.toutiao.com/favicon.ico");
+            MAP.put("weibo.com", "https://weibo.com/favicon.ico");
+            MAP.put("douban.com", "https://www.douban.com/favicon.ico");
+            MAP.put("jianshu.com", "https://www.jianshu.com/favicon.ico");
+        }
+        static String get(String domain) { return MAP.get(domain.toLowerCase(Locale.ROOT)); }
     }
 }

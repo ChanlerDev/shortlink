@@ -9,13 +9,12 @@ import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import dev.chanler.shortlink.common.biz.user.UserContext;
 import dev.chanler.shortlink.common.convention.exception.ClientException;
-import dev.chanler.shortlink.common.convention.result.Result;
 import dev.chanler.shortlink.dao.entity.GroupDO;
 import dev.chanler.shortlink.dao.mapper.GroupMapper;
 import dev.chanler.shortlink.dto.req.GroupSortReqDTO;
 import dev.chanler.shortlink.dto.req.GroupUpdateReqDTO;
-import dev.chanler.shortlink.dto.resp.GroupRespDTO;
 import dev.chanler.shortlink.dto.resp.GroupLinkCountQueryRespDTO;
+import dev.chanler.shortlink.dto.resp.GroupRespDTO;
 import dev.chanler.shortlink.service.GroupService;
 import dev.chanler.shortlink.service.LinkService;
 import dev.chanler.shortlink.toolkit.RandomGenerator;
@@ -24,15 +23,15 @@ import lombok.extern.slf4j.Slf4j;
 import org.redisson.api.RLock;
 import org.redisson.api.RedissonClient;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.stereotype.Service;
 import org.springframework.data.redis.core.StringRedisTemplate;
-import static dev.chanler.shortlink.common.constant.RedisKeyConstant.USER_GIDS_KEY;
+import org.springframework.stereotype.Service;
 
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
 
 import static dev.chanler.shortlink.common.constant.RedisKeyConstant.LOCK_GROUP_CREATE_KEY;
+import static dev.chanler.shortlink.common.constant.RedisKeyConstant.USER_GIDS_KEY;
 
 /**
  * 短链接分组接口实现层

@@ -20,8 +20,8 @@ import java.util.concurrent.TimeUnit;
 
 import static dev.chanler.shortlink.common.constant.RedisKeyConstant.SESSION_KEY;
 import static dev.chanler.shortlink.common.constant.RedisKeyConstant.USER_GIDS_KEY;
-import static dev.chanler.shortlink.common.convention.errorcode.BaseErrorCode.USER_TOKEN_FAIL;
 import static dev.chanler.shortlink.common.constant.UserConstant.PUBLIC_USERNAME;
+import static dev.chanler.shortlink.common.convention.errorcode.BaseErrorCode.USER_TOKEN_FAIL;
 
 /**
  * @author: Chanler

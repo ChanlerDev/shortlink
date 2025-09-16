@@ -48,16 +48,6 @@ public class LinkStatsRecordDTO {
     private String uv;
 
     /**
-     * UV访问标识
-     */
-    private Boolean uvFirstFlag;
-
-    /**
-     * UIP访问标识
-     */
-    private Boolean uipFirstFlag;
-
-    /**
      * 消息队列唯一标识
      */
     private String keys;
