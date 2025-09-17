@@ -176,8 +176,7 @@ public interface LinkAccessStatsMapper extends BaseMapper<LinkAccessStatsDO> {
     /**
      * 查询单个短链接今日 PV 总数（从 stats 表）
      * @param fullShortUrl 完整短链接
-     * @param startOfDay 今日开始时间
-     * @param now 当前时间
+     * @param today 今日日期
      * @return 今日 PV 总数
      */
     @Select("""
@@ -186,7 +185,7 @@ public interface LinkAccessStatsMapper extends BaseMapper<LinkAccessStatsDO> {
             FROM t_link_access_stats tlas
             WHERE tlas.full_short_url = #{fullShortUrl}
               AND tlas.del_flag = '0'
-              AND tlas.date BETWEEN #{startOfDay} AND #{now}
+              AND tlas.date = #{today}
               AND EXISTS (
                   SELECT 1
                   FROM t_link tl
@@ -196,7 +195,6 @@ public interface LinkAccessStatsMapper extends BaseMapper<LinkAccessStatsDO> {
               )
             """)
     int sumTodayPvByShortUrl(@Param("fullShortUrl") String fullShortUrl,
-                             @Param("startOfDay") Date startOfDay,
-                             @Param("now") Date now);
+                             @Param("today") Date today);
 
 }

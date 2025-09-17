@@ -379,14 +379,13 @@ public class LinkServiceImpl extends ServiceImpl<LinkMapper, LinkDO> implements 
      */
     private int getTodayPvFromStats(String fullShortUrl) {
         try {
-            // 使用 Asia/Shanghai 时区计算今日窗口
+            // 使用 Asia/Shanghai 时区获取今日日期
             ZoneId shanghaiZone = ZoneId.of("Asia/Shanghai");
             LocalDate today = LocalDate.now(shanghaiZone);
-            Date startOfDay = Date.from(today.atStartOfDay(shanghaiZone).toInstant());
-            Date now = new Date();
+            Date todayDate = Date.from(today.atStartOfDay(shanghaiZone).toInstant());
             
             // 从 stats 表查询今日 PV 总数
-            return linkAccessStatsMapper.sumTodayPvByShortUrl(fullShortUrl, startOfDay, now);
+            return linkAccessStatsMapper.sumTodayPvByShortUrl(fullShortUrl, todayDate);
         } catch (Exception e) {
             log.warn("Failed to get today PV from stats for {}, returning 0", fullShortUrl, e);
             return 0;
