@@ -185,7 +185,7 @@ public interface LinkAccessStatsMapper extends BaseMapper<LinkAccessStatsDO> {
             FROM t_link_access_stats tlas
             WHERE tlas.full_short_url = #{fullShortUrl}
               AND tlas.del_flag = '0'
-              AND tlas.date = #{today}
+              AND DATE(tlas.date) = DATE(#{today})
               AND EXISTS (
                   SELECT 1
                   FROM t_link tl
