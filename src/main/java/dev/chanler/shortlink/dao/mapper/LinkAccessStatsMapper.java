@@ -184,12 +184,16 @@ public interface LinkAccessStatsMapper extends BaseMapper<LinkAccessStatsDO> {
             SELECT
                 COALESCE(SUM(tlas.pv), 0)
             FROM t_link_access_stats tlas
-            INNER JOIN t_link tl
-                ON tl.full_short_url = tlas.full_short_url
             WHERE tlas.full_short_url = #{fullShortUrl}
-              AND tl.del_flag = '0'
-              AND tl.enable_status = '0'
+              AND tlas.del_flag = '0'
               AND tlas.date BETWEEN #{startOfDay} AND #{now}
+              AND EXISTS (
+                  SELECT 1
+                  FROM t_link tl
+                  WHERE tl.full_short_url = tlas.full_short_url
+                    AND tl.del_flag = '0'
+                    AND tl.enable_status = '0'
+              )
             """)
     int sumTodayPvByShortUrl(@Param("fullShortUrl") String fullShortUrl,
                              @Param("startOfDay") Date startOfDay,

@@ -114,98 +114,20 @@ public interface LinkAccessLogsMapper extends BaseMapper<LinkAccessLogsDO> {
      * @return 新旧访客统计数据
      */
     @Select("""
-            <script>
-            <![CDATA[
             SELECT
-                SUM(CASE WHEN fv.first_flag = 1 THEN 1 ELSE 0 END) AS newUserCnt,
-                SUM(CASE WHEN fv.first_flag = 0 THEN 1 ELSE 0 END) AS oldUserCnt
-            FROM (
-                SELECT DISTINCT tls.user
-                FROM t_link tl
-                INNER JOIN t_link_access_logs tls
-                    ON tl.full_short_url = tls.full_short_url
-                WHERE tls.full_short_url = #{param.fullShortUrl}
-                    AND tl.gid = #{param.gid}
-                    AND tl.enable_status = #{param.enableStatus}
-                    AND tl.del_flag = '0'
-                    AND tls.del_flag = '0'
-                    AND tls.create_time BETWEEN #{param.startDate} AND #{param.endDate}
-            ) active
-            LEFT JOIN (
-                SELECT
-                    tls.user,
-                    MAX(tls.first_flag) AS first_flag
-                FROM t_link tl
-                INNER JOIN t_link_access_logs tls
-                    ON tl.full_short_url = tls.full_short_url
-                WHERE tls.full_short_url = #{param.fullShortUrl}
-                    AND tl.gid = #{param.gid}
-                    AND tl.enable_status = #{param.enableStatus}
-                    AND tl.del_flag = '0'
-                    AND tls.del_flag = '0'
-                GROUP BY tls.user
-            ) fv ON fv.user = active.user
-            ]]>
-            </script>
-            """)
-    HashMap<String, Object> findUvTypeCntByShortLink(@Param("param") LinkStatsReqDTO linkStatsReqDTO);
-
-    /**
-     * 根据短链接和用户列表获取新旧访客类型
-     * @param gid 分组标识
-     * @param fullShortUrl 完整短链接
-     * @param enableStatus 启用状态
-     * @param startDate 开始日期
-     * @param endDate 结束日期
-     * @param userAccessLogsList 用户列表
-     * @return 用户新旧访客类型列表
-     */
-    @Select("""
-            <script>
-            <![CDATA[
-            SELECT DISTINCT
-                tls.user,
-                CASE
-                    WHEN fv.first_flag = 1 THEN '新访客'
-                    ELSE '老访客'
-                END AS uvType
+                COUNT(DISTINCT CASE WHEN tls.first_flag = 1 THEN tls.user END) AS newUserCnt,
+                COUNT(DISTINCT CASE WHEN tls.first_flag = 0 THEN tls.user END) AS oldUserCnt
             FROM t_link tl
             INNER JOIN t_link_access_logs tls
                 ON tl.full_short_url = tls.full_short_url
-            LEFT JOIN (
-                SELECT
-                    inner_tls.user,
-                    MAX(inner_tls.first_flag) AS first_flag
-                FROM t_link inner_tl
-                INNER JOIN t_link_access_logs inner_tls
-                    ON inner_tl.full_short_url = inner_tls.full_short_url
-                WHERE inner_tls.full_short_url = #{fullShortUrl}
-                    AND inner_tl.gid = #{gid}
-                    AND inner_tl.del_flag = '0'
-                    AND inner_tl.enable_status = #{enableStatus}
-                    AND inner_tls.del_flag = '0'
-                GROUP BY inner_tls.user
-            ) fv ON fv.user = tls.user
-            WHERE tls.full_short_url = #{fullShortUrl}
-                AND tl.gid = #{gid}
+            WHERE tls.full_short_url = #{param.fullShortUrl}
+                AND tl.gid = #{param.gid}
+                AND tl.enable_status = #{param.enableStatus}
                 AND tl.del_flag = '0'
-                AND tl.enable_status = #{enableStatus}
                 AND tls.del_flag = '0'
-                AND tls.user IN
-                <foreach item='item' index='index' collection='userAccessLogsList' open='(' separator=',' close=')'>
-                    #{item}
-                </foreach>
-            ]]>
-            </script>
+                AND tls.create_time BETWEEN #{param.startDate} AND #{param.endDate}
             """)
-    List<Map<String, Object>> selectUvTypeByUsers(
-            @Param("gid") String gid,
-            @Param("fullShortUrl") String fullShortUrl,
-            @Param("enableStatus") Integer enableStatus,
-            @Param("startDate") String startDate,
-            @Param("endDate") String endDate,
-            @Param("userAccessLogsList") List<String> userAccessLogsList
-    );
+    HashMap<String, Object> findUvTypeCntByShortLink(@Param("param") LinkStatsReqDTO linkStatsReqDTO);
 
     /**
      * 根据短链接分页获取访问日志
@@ -226,54 +148,4 @@ public interface LinkAccessLogsMapper extends BaseMapper<LinkAccessLogsDO> {
             """)
     IPage<LinkAccessLogsDO> selectGroupPage(@Param("param") GroupStatsAccessRecordReqDTO groupStatsAccessRecordReqDTO);
 
-    /**
-     * 根据分组和用户列表获取新旧访客类型
-     * @param gid 分组标识
-     * @param startDate 开始日期
-     * @param endDate 结束日期
-     * @param userAccessLogsList 用户列表
-     * @return 用户新旧访客类型列表
-     */
-    @Select("""
-            <script>
-            <![CDATA[
-            SELECT DISTINCT
-                tls.user,
-                CASE
-                    WHEN fv.first_flag = 1 THEN '新访客'
-                    ELSE '老访客'
-                END AS uvType
-            FROM t_link tl
-            INNER JOIN t_link_access_logs tls
-                ON tl.full_short_url = tls.full_short_url
-            LEFT JOIN (
-                SELECT
-                    inner_tls.user,
-                    MAX(inner_tls.first_flag) AS first_flag
-                FROM t_link inner_tl
-                INNER JOIN t_link_access_logs inner_tls
-                    ON inner_tl.full_short_url = inner_tls.full_short_url
-                WHERE inner_tl.gid = #{gid}
-                    AND inner_tl.del_flag = '0'
-                    AND inner_tl.enable_status = '0'
-                    AND inner_tls.del_flag = '0'
-                GROUP BY inner_tls.user
-            ) fv ON fv.user = tls.user
-            WHERE tl.gid = #{gid}
-                AND tl.del_flag = '0'
-                AND tl.enable_status = '0'
-                AND tls.del_flag = '0'
-                AND tls.user IN
-                <foreach item='item' index='index' collection='userAccessLogsList' open='(' separator=',' close=')'>
-                    #{item}
-                </foreach>
-            ]]>
-            </script>
-            """)
-    List<Map<String, Object>> selectGroupUvTypeByUsers(
-            @Param("gid") String gid,
-            @Param("startDate") String startDate,
-            @Param("endDate") String endDate,
-            @Param("userAccessLogsList") List<String> userAccessLogsList
-    );
 }

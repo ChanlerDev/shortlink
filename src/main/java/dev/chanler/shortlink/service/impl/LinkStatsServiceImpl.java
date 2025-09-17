@@ -252,26 +252,10 @@ public class LinkStatsServiceImpl implements LinkStatsService {
         if (CollUtil.isEmpty(linkAccessLogsDOIPage.getRecords())) {
             return new Page<>();
         }
-        IPage<LinkStatsAccessRecordRespDTO> actualResult = linkAccessLogsDOIPage.convert(each -> BeanUtil.toBean(each, LinkStatsAccessRecordRespDTO.class));
-        List<String> userAccessLogsList = actualResult.getRecords().stream()
-                .map(LinkStatsAccessRecordRespDTO::getUser)
-                .toList();
-        List<Map<String, Object>> uvTypeList = linkAccessLogsMapper.selectUvTypeByUsers(
-                linkStatsAccessRecordReqDTO.getGid(),
-                linkStatsAccessRecordReqDTO.getFullShortUrl(),
-                linkStatsAccessRecordReqDTO.getEnableStatus(),
-                linkStatsAccessRecordReqDTO.getStartDate(),
-                linkStatsAccessRecordReqDTO.getEndDate(),
-                userAccessLogsList
-        );
-        actualResult.getRecords().forEach(each -> {
-            String uvType = uvTypeList.stream()
-                    .filter(item -> Objects.equals(each.getUser(), item.get("user")))
-                    .findFirst()
-                    .map(item -> item.get("uvType"))
-                    .map(Object::toString)
-                    .orElse("旧访客");
-            each.setUvType(uvType);
+        IPage<LinkStatsAccessRecordRespDTO> actualResult = linkAccessLogsDOIPage.convert(each -> {
+            LinkStatsAccessRecordRespDTO linkStatsAccessRecordRespDTO = BeanUtil.toBean(each, LinkStatsAccessRecordRespDTO.class);
+            linkStatsAccessRecordRespDTO.setUvType(Boolean.TRUE.equals(each.getFirstFlag()) ? "新访客" : "老访客");
+            return linkStatsAccessRecordRespDTO;
         });
         return actualResult;
     }
@@ -473,25 +457,11 @@ public class LinkStatsServiceImpl implements LinkStatsService {
             return new Page<>();
         }
         IPage<LinkStatsAccessRecordRespDTO> actualResult = linkAccessLogsDOIPage
-                .convert(each -> BeanUtil.toBean(each, LinkStatsAccessRecordRespDTO.class));
-        List<String> userAccessLogsList = actualResult.getRecords().stream()
-                .map(LinkStatsAccessRecordRespDTO::getUser)
-                .toList();
-        List<Map<String, Object>> uvTypeList = linkAccessLogsMapper.selectGroupUvTypeByUsers(
-                groupStatsAccessRecordReqDTO.getGid(),
-                groupStatsAccessRecordReqDTO.getStartDate(),
-                groupStatsAccessRecordReqDTO.getEndDate(),
-                userAccessLogsList
-        );
-        actualResult.getRecords().forEach(each -> {
-            String uvType = uvTypeList.stream()
-                    .filter(item -> Objects.equals(each.getUser(), item.get("user")))
-                    .findFirst()
-                    .map(item -> item.get("uvType"))
-                    .map(Object::toString)
-                    .orElse("旧访客");
-            each.setUvType(uvType);
-        });
+                .convert(each -> {
+                    LinkStatsAccessRecordRespDTO linkStatsAccessRecordRespDTO = BeanUtil.toBean(each, LinkStatsAccessRecordRespDTO.class);
+                    linkStatsAccessRecordRespDTO.setUvType(Boolean.TRUE.equals(each.getFirstFlag()) ? "新访客" : "老访客");
+                    return linkStatsAccessRecordRespDTO;
+                });
         return actualResult;
     }
 }
