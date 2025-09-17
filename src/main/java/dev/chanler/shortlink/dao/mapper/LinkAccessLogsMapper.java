@@ -115,9 +115,10 @@ public interface LinkAccessLogsMapper extends BaseMapper<LinkAccessLogsDO> {
      */
     @Select("""
             <script>
+            <![CDATA[
             SELECT
-                SUM(CASE WHEN fv.first_visit_time < #{param.startDate} THEN 1 ELSE 0 END) AS oldUserCnt,
-                SUM(CASE WHEN fv.first_visit_time BETWEEN #{param.startDate} AND #{param.endDate} THEN 1 ELSE 0 END) AS newUserCnt
+                SUM(CASE WHEN fv.first_flag = 1 THEN 1 ELSE 0 END) AS newUserCnt,
+                SUM(CASE WHEN fv.first_flag = 0 THEN 1 ELSE 0 END) AS oldUserCnt
             FROM (
                 SELECT DISTINCT tls.user
                 FROM t_link tl
@@ -133,10 +134,7 @@ public interface LinkAccessLogsMapper extends BaseMapper<LinkAccessLogsDO> {
             LEFT JOIN (
                 SELECT
                     tls.user,
-                    COALESCE(
-                        MIN(CASE WHEN tls.first_flag = 1 THEN tls.create_time END),
-                        MIN(tls.create_time)
-                    ) AS first_visit_time
+                    MAX(tls.first_flag) AS first_flag
                 FROM t_link tl
                 INNER JOIN t_link_access_logs tls
                     ON tl.full_short_url = tls.full_short_url
@@ -147,6 +145,7 @@ public interface LinkAccessLogsMapper extends BaseMapper<LinkAccessLogsDO> {
                     AND tls.del_flag = '0'
                 GROUP BY tls.user
             ) fv ON fv.user = active.user
+            ]]>
             </script>
             """)
     HashMap<String, Object> findUvTypeCntByShortLink(@Param("param") LinkStatsReqDTO linkStatsReqDTO);
@@ -163,10 +162,11 @@ public interface LinkAccessLogsMapper extends BaseMapper<LinkAccessLogsDO> {
      */
     @Select("""
             <script>
+            <![CDATA[
             SELECT DISTINCT
                 tls.user,
                 CASE
-                    WHEN fv.first_visit_time BETWEEN #{startDate} AND #{endDate} THEN '新访客'
+                    WHEN fv.first_flag = 1 THEN '新访客'
                     ELSE '老访客'
                 END AS uvType
             FROM t_link tl
@@ -175,10 +175,7 @@ public interface LinkAccessLogsMapper extends BaseMapper<LinkAccessLogsDO> {
             LEFT JOIN (
                 SELECT
                     inner_tls.user,
-                    COALESCE(
-                        MIN(CASE WHEN inner_tls.first_flag = 1 THEN inner_tls.create_time END),
-                        MIN(inner_tls.create_time)
-                    ) AS first_visit_time
+                    MAX(inner_tls.first_flag) AS first_flag
                 FROM t_link inner_tl
                 INNER JOIN t_link_access_logs inner_tls
                     ON inner_tl.full_short_url = inner_tls.full_short_url
@@ -198,6 +195,7 @@ public interface LinkAccessLogsMapper extends BaseMapper<LinkAccessLogsDO> {
                 <foreach item='item' index='index' collection='userAccessLogsList' open='(' separator=',' close=')'>
                     #{item}
                 </foreach>
+            ]]>
             </script>
             """)
     List<Map<String, Object>> selectUvTypeByUsers(
@@ -238,10 +236,11 @@ public interface LinkAccessLogsMapper extends BaseMapper<LinkAccessLogsDO> {
      */
     @Select("""
             <script>
+            <![CDATA[
             SELECT DISTINCT
                 tls.user,
                 CASE
-                    WHEN fv.first_visit_time BETWEEN #{startDate} AND #{endDate} THEN '新访客'
+                    WHEN fv.first_flag = 1 THEN '新访客'
                     ELSE '老访客'
                 END AS uvType
             FROM t_link tl
@@ -250,10 +249,7 @@ public interface LinkAccessLogsMapper extends BaseMapper<LinkAccessLogsDO> {
             LEFT JOIN (
                 SELECT
                     inner_tls.user,
-                    COALESCE(
-                        MIN(CASE WHEN inner_tls.first_flag = 1 THEN inner_tls.create_time END),
-                        MIN(inner_tls.create_time)
-                    ) AS first_visit_time
+                    MAX(inner_tls.first_flag) AS first_flag
                 FROM t_link inner_tl
                 INNER JOIN t_link_access_logs inner_tls
                     ON inner_tl.full_short_url = inner_tls.full_short_url
@@ -271,6 +267,7 @@ public interface LinkAccessLogsMapper extends BaseMapper<LinkAccessLogsDO> {
                 <foreach item='item' index='index' collection='userAccessLogsList' open='(' separator=',' close=')'>
                     #{item}
                 </foreach>
+            ]]>
             </script>
             """)
     List<Map<String, Object>> selectGroupUvTypeByUsers(
