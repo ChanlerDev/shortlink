@@ -1,5 +1,7 @@
 package dev.chanler.shortlink.dto.req;
 
+import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
+import dev.chanler.shortlink.dao.entity.LinkAccessLogsDO;
 import lombok.Data;
 
 /**
@@ -7,7 +9,7 @@ import lombok.Data;
  * @author: Chanler
  */
 @Data
-public class GroupStatsAccessRecordReqDTO {
+public class GroupStatsAccessRecordReqDTO extends Page<LinkAccessLogsDO> {
 
     /**
      * 分组标识
