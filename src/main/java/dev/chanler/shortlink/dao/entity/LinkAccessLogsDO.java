@@ -62,4 +62,9 @@ public class LinkAccessLogsDO extends BaseDO {
      * 地区
      */
     private String locale;
+
+    /**
+     * 首访标记
+     */
+    private Boolean firstFlag;
 }

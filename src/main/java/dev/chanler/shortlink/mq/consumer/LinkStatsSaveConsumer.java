@@ -1,8 +1,6 @@
 package dev.chanler.shortlink.mq.consumer;
 
-import cn.hutool.core.date.DateUtil;
-import cn.hutool.core.date.Week;
-import cn.hutool.core.text.StrBuilder;
+import cn.hutool.core.util.StrUtil;
 import com.alibaba.fastjson2.JSON;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
@@ -27,13 +25,17 @@ import org.springframework.data.redis.core.script.DefaultRedisScript;
 import org.springframework.data.redis.stream.StreamListener;
 import org.springframework.scripting.support.ResourceScriptSource;
 import org.springframework.stereotype.Component;
+import org.springframework.transaction.support.TransactionTemplate;
 
 import java.time.LocalDate;
 import java.time.ZoneId;
+import java.time.ZonedDateTime;
 import java.util.Arrays;
 import java.util.Date;
 import java.util.Map;
 import java.util.Objects;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 import static dev.chanler.shortlink.common.constant.RedisKeyConstant.*;
 
@@ -58,6 +60,7 @@ public class LinkStatsSaveConsumer implements StreamListener<String, MapRecord<S
     private final LinkDeviceStatsMapper linkDeviceStatsMapper;
     private final LinkNetworkStatsMapper linkNetworkStatsMapper;
     private final StringRedisTemplate stringRedisTemplate;
+    private final TransactionTemplate transactionTemplate;
     private final MessageQueueIdempotentHandler messageQueueIdempotentHandler;
 
     private DefaultRedisScript<Long> hllCountAddDeltaScript;
@@ -110,13 +113,18 @@ public class LinkStatsSaveConsumer implements StreamListener<String, MapRecord<S
                 return;
             }
             String gid = shortLinkGotoDO.getGid();
-            Date currentDate = statsRecord.getCurrentDate();
-            int hour = DateUtil.hour(currentDate, true);
-            Week week = DateUtil.dayOfWeekEnum(currentDate);
-            int weekValue = week.getIso8601Value();
-            // 计算 v = epochDay(Asia/Shanghai) % 2（基于事件时间 currentDate）
-            Date ts = currentDate != null ? currentDate : new Date();
-            int v = (int)(LocalDate.ofInstant(ts.toInstant(), ZoneId.of("Asia/Shanghai")).toEpochDay() % 2);
+            Date eventTime = statsRecord.getCurrentDate();
+            if (eventTime == null) {
+                eventTime = new Date();
+            }
+            ZoneId zoneId = ZoneId.of("Asia/Shanghai");
+            ZonedDateTime zonedDateTime = ZonedDateTime.ofInstant(eventTime.toInstant(), zoneId);
+            int hour = zonedDateTime.getHour();
+            int weekValue = zonedDateTime.getDayOfWeek().getValue();
+            LocalDate localDate = zonedDateTime.toLocalDate();
+            Date statsDate = Date.from(localDate.atStartOfDay(zoneId).toInstant());
+            // 计算 v = epochDay(Asia/Shanghai) % 2（基于事件时间）
+            int v = (int)(localDate.toEpochDay() % 2);
             
             // 使用新的 {v} 风格键
             String uvKey = String.format(STATS_UV_HLL_KEY, v, fullShortUrl);
@@ -144,7 +152,7 @@ public class LinkStatsSaveConsumer implements StreamListener<String, MapRecord<S
             GeoInfo geoInfo = ipGeoClient.query(statsRecord.getUip());
             LinkLocaleStatsDO linkLocaleStatsDO = LinkLocaleStatsDO.builder()
                     .fullShortUrl(fullShortUrl)
-                    .date(new Date())
+                    .date(statsDate)
                     .cnt(1)
                     .province(geoInfo.getProvince())
                     .city(geoInfo.getCity())
@@ -156,46 +164,32 @@ public class LinkStatsSaveConsumer implements StreamListener<String, MapRecord<S
                     .os(statsRecord.getOs())
                     .cnt(1)
                     .fullShortUrl(fullShortUrl)
-                    .date(currentDate)
+                    .date(statsDate)
                     .build();
             linkOsStatsMapper.shortLinkOsStats(linkOsStatsDO);
             LinkBrowserStatsDO linkBrowserStatsDO = LinkBrowserStatsDO.builder()
                     .browser(statsRecord.getBrowser())
                     .cnt(1)
                     .fullShortUrl(fullShortUrl)
-                    .date(currentDate)
+                    .date(statsDate)
                     .build();
             linkBrowserStatsMapper.shortLinkBrowserStats(linkBrowserStatsDO);
             LinkDeviceStatsDO linkDeviceStatsDO = LinkDeviceStatsDO.builder()
                     .device(statsRecord.getDevice())
                     .cnt(1)
                     .fullShortUrl(fullShortUrl)
-                    .date(currentDate)
+                    .date(statsDate)
                     .build();
             linkDeviceStatsMapper.shortLinkDeviceStats(linkDeviceStatsDO);
             LinkNetworkStatsDO linkNetworkStatsDO = LinkNetworkStatsDO.builder()
                     .network(geoInfo.getIsp())
                     .cnt(1)
                     .fullShortUrl(fullShortUrl)
-                    .date(currentDate)
+                    .date(statsDate)
                     .build();
             linkNetworkStatsMapper.shortLinkNetworkStats(linkNetworkStatsDO);
-            LinkAccessLogsDO linkAccessLogsDO = LinkAccessLogsDO.builder()
-                    .user(statsRecord.getUv())
-                    .ip(statsRecord.getUip())
-                    .browser(statsRecord.getBrowser())
-                    .os(statsRecord.getOs())
-                    .network(geoInfo.getIsp())
-                    .device(statsRecord.getDevice())
-                    .locale(StrBuilder.create(geoInfo.getCountry())
-                            .append("-")
-                            .append(geoInfo.getProvince())
-                            .append("-")
-                            .append(geoInfo.getCity())
-                            .toString())
-                    .fullShortUrl(fullShortUrl)
-                    .build();
-            linkAccessLogsMapper.insert(linkAccessLogsDO);
+
+            saveAccessLogWithFirstFlag(fullShortUrl, statsRecord, geoInfo);
             
             // 使用 delta 写入明细统计
             LinkAccessStatsDO linkAccessStatsDOWithDelta = LinkAccessStatsDO.builder()
@@ -205,7 +199,7 @@ public class LinkStatsSaveConsumer implements StreamListener<String, MapRecord<S
                     .hour(hour)
                     .weekday(weekValue)
                     .fullShortUrl(fullShortUrl)
-                    .date(currentDate)
+                    .date(statsDate)
                     .build();
             linkAccessStatsMapper.shortLinkAccessStats(linkAccessStatsDOWithDelta);
             
@@ -216,5 +210,46 @@ public class LinkStatsSaveConsumer implements StreamListener<String, MapRecord<S
         } finally {
             rLock.unlock();
         }
+    }
+
+    private void saveAccessLogWithFirstFlag(String fullShortUrl,
+                                            LinkStatsRecordDTO statsRecord,
+                                            GeoInfo geoInfo) {
+        transactionTemplate.executeWithoutResult(status -> {
+            boolean isFirstVisit = false;
+            String uv = statsRecord.getUv();
+            if (StrUtil.isNotBlank(uv)) {
+                LinkAccessLogsDO existed = linkAccessLogsMapper.selectOne(
+                        Wrappers.lambdaQuery(LinkAccessLogsDO.class)
+                                .eq(LinkAccessLogsDO::getFullShortUrl, fullShortUrl)
+                                .eq(LinkAccessLogsDO::getUser, uv)
+                                .eq(LinkAccessLogsDO::getDelFlag, 0)
+                                .last("LIMIT 1 FOR UPDATE"));
+                isFirstVisit = Objects.isNull(existed);
+            }
+
+            String locale = null;
+            if (geoInfo != null) {
+                locale = Stream.of(geoInfo.getCountry(), geoInfo.getProvince(), geoInfo.getCity())
+                        .filter(StrUtil::isNotBlank)
+                        .collect(Collectors.joining("-"));
+                if (StrUtil.isBlank(locale)) {
+                    locale = null;
+                }
+            }
+
+            LinkAccessLogsDO accessLogsDO = LinkAccessLogsDO.builder()
+                    .fullShortUrl(fullShortUrl)
+                    .user(statsRecord.getUv())
+                    .ip(statsRecord.getUip())
+                    .browser(statsRecord.getBrowser())
+                    .os(statsRecord.getOs())
+                    .network(geoInfo != null ? geoInfo.getIsp() : null)
+                    .device(statsRecord.getDevice())
+                    .locale(locale)
+                    .firstFlag(isFirstVisit)
+                    .build();
+            linkAccessLogsMapper.insert(accessLogsDO);
+        });
     }
 }

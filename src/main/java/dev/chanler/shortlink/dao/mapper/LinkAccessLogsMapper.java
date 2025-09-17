@@ -114,16 +114,12 @@ public interface LinkAccessLogsMapper extends BaseMapper<LinkAccessLogsDO> {
      * @return 新旧访客统计数据
      */
     @Select("""
+            <script>
             SELECT
-                SUM(old_user) AS oldUserCnt,
-                SUM(new_user) AS newUserCnt
+                SUM(CASE WHEN fv.first_visit_time < #{param.startDate} THEN 1 ELSE 0 END) AS oldUserCnt,
+                SUM(CASE WHEN fv.first_visit_time BETWEEN #{param.startDate} AND #{param.endDate} THEN 1 ELSE 0 END) AS newUserCnt
             FROM (
-                SELECT
-                    CASE WHEN COUNT(DISTINCT DATE(tls.create_time)) > 1 THEN 1 ELSE 0 END AS old_user,
-                    CASE WHEN COUNT(DISTINCT DATE(tls.create_time)) = 1
-                        AND MAX(tls.create_time) >= #{param.startDate}
-                        AND MAX(tls.create_time) <= #{param.endDate}
-                        THEN 1 ELSE 0 END AS new_user
+                SELECT DISTINCT tls.user
                 FROM t_link tl
                 INNER JOIN t_link_access_logs tls
                     ON tl.full_short_url = tls.full_short_url
@@ -131,8 +127,27 @@ public interface LinkAccessLogsMapper extends BaseMapper<LinkAccessLogsDO> {
                     AND tl.gid = #{param.gid}
                     AND tl.enable_status = #{param.enableStatus}
                     AND tl.del_flag = '0'
+                    AND tls.del_flag = '0'
+                    AND tls.create_time BETWEEN #{param.startDate} AND #{param.endDate}
+            ) active
+            LEFT JOIN (
+                SELECT
+                    tls.user,
+                    COALESCE(
+                        MIN(CASE WHEN tls.first_flag = 1 THEN tls.create_time END),
+                        MIN(tls.create_time)
+                    ) AS first_visit_time
+                FROM t_link tl
+                INNER JOIN t_link_access_logs tls
+                    ON tl.full_short_url = tls.full_short_url
+                WHERE tls.full_short_url = #{param.fullShortUrl}
+                    AND tl.gid = #{param.gid}
+                    AND tl.enable_status = #{param.enableStatus}
+                    AND tl.del_flag = '0'
+                    AND tls.del_flag = '0'
                 GROUP BY tls.user
-            ) AS user_counts
+            ) fv ON fv.user = active.user
+            </script>
             """)
     HashMap<String, Object> findUvTypeCntByShortLink(@Param("param") LinkStatsReqDTO linkStatsReqDTO);
 
@@ -148,24 +163,41 @@ public interface LinkAccessLogsMapper extends BaseMapper<LinkAccessLogsDO> {
      */
     @Select("""
             <script>
-            SELECT
+            SELECT DISTINCT
                 tls.user,
                 CASE
-                    WHEN MIN(tls.create_time) BETWEEN #{startDate} AND #{endDate} THEN '新访客'
+                    WHEN fv.first_visit_time BETWEEN #{startDate} AND #{endDate} THEN '新访客'
                     ELSE '老访客'
                 END AS uvType
             FROM t_link tl
             INNER JOIN t_link_access_logs tls
                 ON tl.full_short_url = tls.full_short_url
+            LEFT JOIN (
+                SELECT
+                    inner_tls.user,
+                    COALESCE(
+                        MIN(CASE WHEN inner_tls.first_flag = 1 THEN inner_tls.create_time END),
+                        MIN(inner_tls.create_time)
+                    ) AS first_visit_time
+                FROM t_link inner_tl
+                INNER JOIN t_link_access_logs inner_tls
+                    ON inner_tl.full_short_url = inner_tls.full_short_url
+                WHERE inner_tls.full_short_url = #{fullShortUrl}
+                    AND inner_tl.gid = #{gid}
+                    AND inner_tl.del_flag = '0'
+                    AND inner_tl.enable_status = #{enableStatus}
+                    AND inner_tls.del_flag = '0'
+                GROUP BY inner_tls.user
+            ) fv ON fv.user = tls.user
             WHERE tls.full_short_url = #{fullShortUrl}
                 AND tl.gid = #{gid}
                 AND tl.del_flag = '0'
                 AND tl.enable_status = #{enableStatus}
+                AND tls.del_flag = '0'
                 AND tls.user IN
                 <foreach item='item' index='index' collection='userAccessLogsList' open='(' separator=',' close=')'>
                     #{item}
                 </foreach>
-            GROUP BY tls.user
             </script>
             """)
     List<Map<String, Object>> selectUvTypeByUsers(
@@ -206,23 +238,39 @@ public interface LinkAccessLogsMapper extends BaseMapper<LinkAccessLogsDO> {
      */
     @Select("""
             <script>
-            SELECT
+            SELECT DISTINCT
                 tls.user,
                 CASE
-                    WHEN MIN(tls.create_time) BETWEEN #{startDate} AND #{endDate} THEN '新访客'
+                    WHEN fv.first_visit_time BETWEEN #{startDate} AND #{endDate} THEN '新访客'
                     ELSE '老访客'
                 END AS uvType
             FROM t_link tl
             INNER JOIN t_link_access_logs tls
                 ON tl.full_short_url = tls.full_short_url
+            LEFT JOIN (
+                SELECT
+                    inner_tls.user,
+                    COALESCE(
+                        MIN(CASE WHEN inner_tls.first_flag = 1 THEN inner_tls.create_time END),
+                        MIN(inner_tls.create_time)
+                    ) AS first_visit_time
+                FROM t_link inner_tl
+                INNER JOIN t_link_access_logs inner_tls
+                    ON inner_tl.full_short_url = inner_tls.full_short_url
+                WHERE inner_tl.gid = #{gid}
+                    AND inner_tl.del_flag = '0'
+                    AND inner_tl.enable_status = '0'
+                    AND inner_tls.del_flag = '0'
+                GROUP BY inner_tls.user
+            ) fv ON fv.user = tls.user
             WHERE tl.gid = #{gid}
                 AND tl.del_flag = '0'
                 AND tl.enable_status = '0'
+                AND tls.del_flag = '0'
                 AND tls.user IN
                 <foreach item='item' index='index' collection='userAccessLogsList' open='(' separator=',' close=')'>
                     #{item}
                 </foreach>
-            GROUP BY tls.user
             </script>
             """)
     List<Map<String, Object>> selectGroupUvTypeByUsers(
