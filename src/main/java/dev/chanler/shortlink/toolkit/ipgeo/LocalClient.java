@@ -29,6 +29,17 @@ public class LocalClient implements IpGeoClient {
     @Override
     public GeoInfo query(String ip) {
         try {
+            // 检查是否是 IPv6 地址
+            if (ip != null && ip.contains(":")) {
+                // IPv6 地址，ip2region 不支持，返回默认值
+                return GeoInfo.builder()
+                        .country("Unknown")
+                        .province("Unknown")
+                        .city("Unknown")
+                        .isp("Unknown")
+                        .build();
+            }
+            
             String region = searcher.search(ip);
             String[] a = region == null ? new String[0] : region.split("\\|", -1);
             String country  = a.length > 0 ? a[0] : "Unknown";
@@ -43,7 +54,13 @@ public class LocalClient implements IpGeoClient {
                     .build();
         } catch (Exception e) {
             System.out.printf("failed to search(%s): %s\n", ip, e);
+            // 异常时返回默认值而不是 null
+            return GeoInfo.builder()
+                    .country("Unknown")
+                    .province("Unknown")
+                    .city("Unknown")
+                    .isp("Unknown")
+                    .build();
         }
-        return null;
     }
 }

@@ -193,6 +193,7 @@ public interface LinkAccessStatsMapper extends BaseMapper<LinkAccessStatsDO> {
                     AND tl.del_flag = '0'
                     AND tl.enable_status = '0'
               )
+            GROUP BY tlas.full_short_url
             """)
     int sumTodayPvByShortUrl(@Param("fullShortUrl") String fullShortUrl,
                              @Param("today") Date today);
