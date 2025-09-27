@@ -51,7 +51,7 @@ public class UserConfiguration {
             UserFlowRiskControlConfiguration userFlowRiskControlConfiguration) {
         FilterRegistrationBean<UserFlowRiskControlFilter> registration = new FilterRegistrationBean<>();
         registration.setFilter(new UserFlowRiskControlFilter(stringRedisTemplate, userFlowRiskControlConfiguration));
-        registration.addUrlPatterns("/*");
+        registration.addUrlPatterns("/api/short-link/*");
         registration.setOrder(10);
         return registration;
     }
