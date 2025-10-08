@@ -14,7 +14,7 @@ import org.springframework.data.redis.stream.Subscription;
 
 import java.time.Duration;
 import java.util.concurrent.ExecutorService;
-import java.util.concurrent.SynchronousQueue;
+import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -35,21 +35,22 @@ public class RedisStreamConfiguration {
 
     @Bean
     public ExecutorService asyncStreamConsumer() {
-        // 并发线程数按 CPU 动态设置，至少 2，最多 8
-        int nThreads = Math.min(4, Math.max(2, Runtime.getRuntime().availableProcessors()));
+        // 并发线程数按 CPU 动态设置，至少 4，最多 16
+        int nThreads = Math.min(16, Math.max(4, Runtime.getRuntime().availableProcessors() * 2));
         AtomicInteger index = new AtomicInteger();
-        return new ThreadPoolExecutor(nThreads,
+        return new ThreadPoolExecutor(
+                nThreads,
                 nThreads,
                 60,
                 TimeUnit.SECONDS,
-                new SynchronousQueue<>(),
+                new LinkedBlockingQueue<>(500), // 改用有界队列，容量 500
                 runnable -> {
                     Thread thread = new Thread(runnable);
                     thread.setName("stream_consumer_short-link_stats_" + index.incrementAndGet());
                     thread.setDaemon(true);
                     return thread;
                 },
-                new ThreadPoolExecutor.CallerRunsPolicy()
+                new ThreadPoolExecutor.CallerRunsPolicy() // 队列满时背压
         );
     }
 
@@ -69,7 +70,7 @@ public class RedisStreamConfiguration {
     @Bean(destroyMethod = "cancel")
     public Subscription shortLinkStatsSaveConsumerSubscription(
             StreamMessageListenerContainer<String, MapRecord<String, String, String>> streamMessageListenerContainer) {
-        // 单消费者 + SynchronousQueue + CallerRunsPolicy = 天然背压
+        // 多线程消费者 + LinkedBlockingQueue + 批量拉取
         StreamMessageListenerContainer.StreamReadRequest<String> streamReadRequest =
                 StreamMessageListenerContainer.StreamReadRequest.builder(
                                 StreamOffset.create(SHORT_LINK_STATS_STREAM_TOPIC_KEY, ReadOffset.lastConsumed()))
