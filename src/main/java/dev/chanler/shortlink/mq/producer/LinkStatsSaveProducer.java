@@ -22,6 +22,12 @@ public class LinkStatsSaveProducer {
      * 发送延迟消费短链接统计
      */
     public void send(Map<String, String> producerMap) {
+        // 写入消息
         stringRedisTemplate.opsForStream().add(SHORT_LINK_STATS_STREAM_TOPIC_KEY, producerMap);
+        // 防止 Stream 无界增长：按近似 MAXLEN 裁剪，失败忽略
+        try {
+            stringRedisTemplate.opsForStream().trim(SHORT_LINK_STATS_STREAM_TOPIC_KEY, 10_000);
+        } catch (Exception ignore) {
+        }
     }
 }

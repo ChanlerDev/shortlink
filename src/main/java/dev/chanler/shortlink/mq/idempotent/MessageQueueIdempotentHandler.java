@@ -20,12 +20,13 @@ public class MessageQueueIdempotentHandler {
     private final StringRedisTemplate stringRedisTemplate;
 
     /**
-     * 判断当前消息是否消费过
+     * 判断消息是否已被处理过（同时尝试标记为处理中）
      * @param messageId 消息唯一标识
-     * @return 消息是否消费过
+     * @return true-消息已被处理过（重复消费）, false-首次处理
      */
-    public boolean isMessageBeingConsumed(String messageId) {
+    public boolean isProcessed(String messageId) {
         String key = String.format(IDEMPOTENT_KEY_PREFIX, messageId);
+        // setIfAbsent 返回 false 表示 key 已存在（已被处理过）
         return Boolean.FALSE.equals(stringRedisTemplate.opsForValue().setIfAbsent(key, "0", 2L, TimeUnit.MINUTES));
     }
 
@@ -49,10 +50,10 @@ public class MessageQueueIdempotentHandler {
     }
 
     /**
-     * 如果消息处理遇到异常情况，删除幂等标识
+     * 释放幂等标识（消息处理失败时调用）
      * @param messageId 消息唯一标识
      */
-    public void delMessageProcessed(String messageId) {
+    public void release(String messageId) {
         String key = String.format(IDEMPOTENT_KEY_PREFIX, messageId);
         stringRedisTemplate.delete(key);
     }

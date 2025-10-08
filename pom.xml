@@ -27,6 +27,7 @@
         <ip2region.version>2.7.0</ip2region.version>
         <springdoc.version>2.5.0</springdoc.version>
         <mvc-mcp.version>0.11.3</mvc-mcp.version>
+        <caffeine.version>3.1.8</caffeine.version>
     </properties>
 
     <dependencies>
@@ -102,6 +103,13 @@
             <groupId>com.google.guava</groupId>
             <artifactId>guava</artifactId>
             <version>${guava.version}</version>
+        </dependency>
+
+        <!-- 本地每键互斥锁缓存（避免跳转路径使用分布式锁） -->
+        <dependency>
+            <groupId>com.github.ben-manes.caffeine</groupId>
+            <artifactId>caffeine</artifactId>
+            <version>${caffeine.version}</version>
         </dependency>
 
         <dependency>

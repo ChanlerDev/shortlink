@@ -35,9 +35,11 @@ public class RedisStreamConfiguration {
 
     @Bean
     public ExecutorService asyncStreamConsumer() {
+        // 并发线程数按 CPU 动态设置，至少 2，最多 8
+        int nThreads = Math.min(4, Math.max(2, Runtime.getRuntime().availableProcessors()));
         AtomicInteger index = new AtomicInteger();
-        return new ThreadPoolExecutor(1,
-                1,
+        return new ThreadPoolExecutor(nThreads,
+                nThreads,
                 60,
                 TimeUnit.SECONDS,
                 new SynchronousQueue<>(),
@@ -47,7 +49,7 @@ public class RedisStreamConfiguration {
                     thread.setDaemon(true);
                     return thread;
                 },
-                new ThreadPoolExecutor.DiscardOldestPolicy()
+                new ThreadPoolExecutor.CallerRunsPolicy()
         );
     }
 
@@ -57,9 +59,9 @@ public class RedisStreamConfiguration {
         StreamMessageListenerContainer.StreamMessageListenerContainerOptions<String, MapRecord<String, String, String>> options =
                 StreamMessageListenerContainer.StreamMessageListenerContainerOptions
                         .builder()
-                        .batchSize(10)
+                        .batchSize(200) // 提升批量抓取，提高吞吐
                         .executor(asyncStreamConsumer)
-                        .pollTimeout(Duration.ofSeconds(3))
+                        .pollTimeout(Duration.ofMillis(500)) // 更快的轮询以降低延迟
                         .build();
         return StreamMessageListenerContainer.create(redisConnectionFactory, options);
     }
@@ -67,12 +69,13 @@ public class RedisStreamConfiguration {
     @Bean(destroyMethod = "cancel")
     public Subscription shortLinkStatsSaveConsumerSubscription(
             StreamMessageListenerContainer<String, MapRecord<String, String, String>> streamMessageListenerContainer) {
+        // 单消费者 + SynchronousQueue + CallerRunsPolicy = 天然背压
         StreamMessageListenerContainer.StreamReadRequest<String> streamReadRequest =
                 StreamMessageListenerContainer.StreamReadRequest.builder(
                                 StreamOffset.create(SHORT_LINK_STATS_STREAM_TOPIC_KEY, ReadOffset.lastConsumed()))
                         .cancelOnError(throwable -> false)
                         .consumer(Consumer.from(SHORT_LINK_STATS_STREAM_GROUP_KEY, "stats-consumer"))
-                        .autoAcknowledge(true)
+                        .autoAcknowledge(false)
                         .build();
         return streamMessageListenerContainer.register(streamReadRequest, linkStatsSaveConsumer);
     }

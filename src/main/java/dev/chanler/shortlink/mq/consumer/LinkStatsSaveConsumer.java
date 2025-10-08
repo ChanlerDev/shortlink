@@ -76,27 +76,57 @@ public class LinkStatsSaveConsumer implements StreamListener<String, MapRecord<S
 
     @Override
     public void onMessage(MapRecord<String, String, String> message) {
-        String stream = message.getStream();
         RecordId id = message.getId();
-        if (messageQueueIdempotentHandler.isMessageBeingConsumed(id.toString())) {
-            // 判断当前的这个消息流程是否执行完成
+
+        // 幂等检查
+        if (messageQueueIdempotentHandler.isProcessed(id.toString())) {
+            // 消息已被处理过（重复消费）
             if (messageQueueIdempotentHandler.isAccomplish(id.toString())) {
+                // 已完成，补偿 ACK
+                try {
+                    stringRedisTemplate.opsForStream().acknowledge(
+                        SHORT_LINK_STATS_STREAM_TOPIC_KEY,
+                        SHORT_LINK_STATS_STREAM_GROUP_KEY,
+                        id
+                    );
+                } catch (Exception e) {
+                    log.warn("补偿 ACK 失败: {}", id, e);
+                }
                 return;
             }
+            // 正在处理中，抛异常让消息留在 Pending
             throw new ServiceException("消息未完成流程，需要消息队列重试");
         }
+
         try {
+            // 业务逻辑
             Map<String, String> producerMap = message.getValue();
             LinkStatsRecordDTO statsRecord = JSON.parseObject(producerMap.get("statsRecord"), LinkStatsRecordDTO.class);
             actualSaveShortLinkStats(statsRecord);
-            stringRedisTemplate.opsForStream().delete(Objects.requireNonNull(stream), id.getValue());
+
         } catch (Throwable ex) {
-            // 某某某情况宕机了
-            messageQueueIdempotentHandler.delMessageProcessed(id.toString());
-            log.error("记录短链接监控消费异常", ex);
+            // 业务失败，删除幂等标记，不 ACK
+            messageQueueIdempotentHandler.release(id.toString());
+            log.error("业务逻辑执行失败，消息将重试: {}", id, ex);
             throw ex;
         }
-        messageQueueIdempotentHandler.setAccomplish(id.toString());
+
+        // 业务成功后，标记完成并 ACK
+        try {
+            messageQueueIdempotentHandler.setAccomplish(id.toString());
+        } catch (Exception e) {
+            log.error("设置幂等标记失败，但业务已成功，继续 ACK: {}", id, e);
+        }
+
+        try {
+            stringRedisTemplate.opsForStream().acknowledge(
+                SHORT_LINK_STATS_STREAM_TOPIC_KEY,
+                SHORT_LINK_STATS_STREAM_GROUP_KEY,
+                id
+            );
+        } catch (Exception e) {
+            log.error("ACK 失败，但业务已成功且已标记，PEL 巡检会补偿: {}", id, e);
+        }
     }
 
     public void actualSaveShortLinkStats(LinkStatsRecordDTO statsRecord) {

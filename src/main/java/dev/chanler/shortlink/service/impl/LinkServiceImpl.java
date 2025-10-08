@@ -43,10 +43,13 @@ import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
+import com.github.benmanes.caffeine.cache.Cache;
 import org.redisson.api.RBloomFilter;
 import org.redisson.api.RLock;
 import org.redisson.api.RReadWriteLock;
 import org.redisson.api.RedissonClient;
+
+import java.util.concurrent.locks.ReentrantLock;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.io.ClassPathResource;
 import org.springframework.dao.DuplicateKeyException;
@@ -85,6 +88,10 @@ public class LinkServiceImpl extends ServiceImpl<LinkMapper, LinkDO> implements 
     private final LinkStatsSaveProducer linkStatsSaveProducer;
     private final GroupOwnershipVerifier groupOwnershipService;
     private final LinkUtil linkUtil;
+    // 本地每键互斥锁缓存（避免跳转路径使用分布式锁）
+    private final Cache<String, ReentrantLock> redirectLockCache;
+    // 短链接跳转目标 URL 本地缓存（减少 Redis 网络往返）
+    private final Cache<String, String> redirectCache;
 
     private DefaultRedisScript<List> hllBatchScript;
     private static final String HLL_PFCOUNT_BATCH_LUA = "lua/hll_pfcount_batch.lua";
@@ -275,7 +282,10 @@ public class LinkServiceImpl extends ServiceImpl<LinkMapper, LinkDO> implements 
         if (!Objects.equals(hasLinkDO.getValidDateType(), linkUpdateReqDTO.getValidDateType())
                 || !Objects.equals(hasLinkDO.getValidDate(), linkUpdateReqDTO.getValidDate())
                 || !Objects.equals(hasLinkDO.getOriginUrl(), linkUpdateReqDTO.getOriginUrl())) {
+            // 删除 Redis 缓存
             stringRedisTemplate.delete(String.format(GOTO_SHORT_LINK_KEY, linkUpdateReqDTO.getFullShortUrl()));
+            // 删除本地 Caffeine 缓存
+            redirectCache.invalidate(linkUpdateReqDTO.getFullShortUrl());
             Date currentDate = new Date();
             if (hasLinkDO.getValidDate() != null && hasLinkDO.getValidDate().before(currentDate)) {
                 if (Objects.equals(linkUpdateReqDTO.getValidDateType(), ValidDateTypeEnum.PERMANENT.getType()) || linkUpdateReqDTO.getValidDate().after(currentDate)) {
@@ -416,8 +426,18 @@ public class LinkServiceImpl extends ServiceImpl<LinkMapper, LinkDO> implements 
                 .append("/")
                 .append(shortUri)
                 .toString();
-        String originalLink = stringRedisTemplate.opsForValue().get(String.format(GOTO_SHORT_LINK_KEY, fullShortUrl));
+        // 1. 优先查询本地 Caffeine 缓存
+        String originalLink = redirectCache.getIfPresent(fullShortUrl);
         if (StrUtil.isNotBlank(originalLink)) {
+            linkStats(buildLinkStatsRecordAndSetUser(fullShortUrl, request, response));
+            ((HttpServletResponse) response).sendRedirect(originalLink);
+            return;
+        }
+        // 2. 查询 Redis 缓存
+        originalLink = stringRedisTemplate.opsForValue().get(String.format(GOTO_SHORT_LINK_KEY, fullShortUrl));
+        if (StrUtil.isNotBlank(originalLink)) {
+            // 回写本地缓存
+            redirectCache.put(fullShortUrl, originalLink);
             linkStats(buildLinkStatsRecordAndSetUser(fullShortUrl, request, response));
             ((HttpServletResponse) response).sendRedirect(originalLink);
             return;
@@ -437,11 +457,22 @@ public class LinkServiceImpl extends ServiceImpl<LinkMapper, LinkDO> implements 
             ((HttpServletResponse) response).sendRedirect("/page/notfound");
             return;
         }
-        RLock lock = redissonClient.getLock(String.format(LOCK_GOTO_SHORT_LINK_KEY, fullShortUrl));
+        // 本地每键互斥：使用 Caffeine 管理 ReentrantLock，避免跳转路径使用分布式锁导致尾延迟放大
+        ReentrantLock lock = redirectLockCache.get(fullShortUrl, k -> new ReentrantLock());
         lock.lock();
         try {
+            // 双重检查：先查本地缓存
+            originalLink = redirectCache.getIfPresent(fullShortUrl);
+            if (StrUtil.isNotBlank(originalLink)) {
+                linkStats(buildLinkStatsRecordAndSetUser(fullShortUrl, request, response));
+                ((HttpServletResponse) response).sendRedirect(originalLink);
+                return;
+            }
+            // 双重检查：再查 Redis
             originalLink = stringRedisTemplate.opsForValue().get(String.format(GOTO_SHORT_LINK_KEY, fullShortUrl));
             if (StrUtil.isNotBlank(originalLink)) {
+                // 回写本地缓存
+                redirectCache.put(fullShortUrl, originalLink);
                 linkStats(buildLinkStatsRecordAndSetUser(fullShortUrl, request, response));
                 ((HttpServletResponse) response).sendRedirect(originalLink);
                 return;
@@ -475,6 +506,8 @@ public class LinkServiceImpl extends ServiceImpl<LinkMapper, LinkDO> implements 
                     linkDO.getOriginUrl(),
                     LinkUtil.getLinkCacheValidTime(linkDO.getValidDate()), TimeUnit.MILLISECONDS
             );
+            // 同时写入本地缓存
+            redirectCache.put(fullShortUrl, linkDO.getOriginUrl());
             linkStats(buildLinkStatsRecordAndSetUser(fullShortUrl, request, response));
             ((HttpServletResponse) response).sendRedirect(linkDO.getOriginUrl());
         } finally {
