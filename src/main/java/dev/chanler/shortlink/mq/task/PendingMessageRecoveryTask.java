@@ -23,7 +23,7 @@ import static dev.chanler.shortlink.common.constant.RedisKeyConstant.SHORT_LINK_
 @Component
 @RequiredArgsConstructor
 public class PendingMessageRecoveryTask {
-
+    
     private final StringRedisTemplate stringRedisTemplate;
     private final LinkStatsSaveConsumer consumer;
 
@@ -36,8 +36,11 @@ public class PendingMessageRecoveryTask {
                          SHORT_LINK_STATS_STREAM_GROUP_KEY);
 
             if (summary == null || summary.getTotalPendingMessages() == 0) {
+                log.debug("PEL 巡检: 无 Pending 消息");
                 return;
             }
+
+            log.debug("PEL 巡检: 发现 {} 条 Pending 消息", summary.getTotalPendingMessages());
 
             // 2. 获取 Pending 列表（最多100条）
             PendingMessages messages = stringRedisTemplate.opsForStream()
@@ -47,23 +50,37 @@ public class PendingMessageRecoveryTask {
                          100L);
 
             if (messages == null || messages.isEmpty()) {
+                log.debug("PEL 巡检: Pending 列表为空");
                 return;
             }
 
-            // 3. 批量收集所有 Pending 的 ID
+            // 3. 批量收集所有 Pending 的 ID (过滤 null)
             RecordId[] allPendingIds = messages.stream()
                 .map(PendingMessage::getId)
+                .filter(id -> id != null)  // 防止 null 导致 Redisson NPE
                 .toArray(RecordId[]::new);
 
+            // 空数组检查：避免 Redisson xClaim 的 NPE bug
+            if (allPendingIds.length == 0) {
+                log.debug("PEL 巡检: 没有有效的 Pending 消息 ID");
+                return;
+            }
+
             // 4. XCLAIM 的 minIdleTime 会自动过滤：只认领 idle > 5分钟的消息
-            List<MapRecord<String, Object, Object>> claimed =
-                stringRedisTemplate.opsForStream().claim(
+            List<MapRecord<String, Object, Object>> claimed = null;
+            try {
+                claimed = stringRedisTemplate.opsForStream().claim(
                     SHORT_LINK_STATS_STREAM_TOPIC_KEY,
                     SHORT_LINK_STATS_STREAM_GROUP_KEY,
                     "stats-consumer",
                     Duration.ofMinutes(5),  // 只认领 idle > 5分钟的
                     allPendingIds
                 );
+            } catch (NullPointerException e) {
+                // Redisson 3.21.3 的 xClaim 有 NPE bug，降级处理
+                log.warn("XCLAIM 调用失败 (可能是 Redisson NPE bug)，跳过本次恢复: {}", e.getMessage());
+                return;
+            }
 
             // 5. 处理认领到的消息（已被 Redis 自动过滤）
             if (claimed == null || claimed.isEmpty()) {
