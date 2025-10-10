@@ -35,8 +35,8 @@ public class RedisStreamConfiguration {
 
     @Bean
     public ExecutorService asyncStreamConsumer() {
-        // 并发线程数按 CPU 动态设置，至少 4，最多 16
-        int nThreads = Math.min(16, Math.max(4, Runtime.getRuntime().availableProcessors() * 2));
+        // 并发线程数按 CPU 动态设置，至少 3，最多 4
+        int nThreads = Math.min(4, Math.max(3, Runtime.getRuntime().availableProcessors() * 2));
         AtomicInteger index = new AtomicInteger();
         return new ThreadPoolExecutor(
                 nThreads,

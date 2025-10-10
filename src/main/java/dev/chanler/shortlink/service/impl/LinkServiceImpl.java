@@ -30,6 +30,7 @@ import dev.chanler.shortlink.dto.req.LinkCreateReqDTO;
 import dev.chanler.shortlink.dto.req.LinkPageReqDTO;
 import dev.chanler.shortlink.dto.req.LinkUpdateReqDTO;
 import dev.chanler.shortlink.dto.resp.*;
+import dev.chanler.shortlink.mq.consumer.LinkStatsSaveConsumer;
 import dev.chanler.shortlink.mq.producer.LinkStatsSaveProducer;
 import dev.chanler.shortlink.service.LinkService;
 import dev.chanler.shortlink.toolkit.LinkUtil;
@@ -86,6 +87,7 @@ public class LinkServiceImpl extends ServiceImpl<LinkMapper, LinkDO> implements 
     private final LinkAccessStatsMapper linkAccessStatsMapper;
     private final GotoDomainWhiteListConfiguration gotoDomainWhiteListConfiguration;
     private final LinkStatsSaveProducer linkStatsSaveProducer;
+    private final LinkStatsSaveConsumer linkStatsSaveConsumer;
     private final GroupOwnershipVerifier groupOwnershipService;
     private final LinkUtil linkUtil;
     // 本地每键互斥锁缓存（避免跳转路径使用分布式锁）
@@ -275,6 +277,9 @@ public class LinkServiceImpl extends ServiceImpl<LinkMapper, LinkDO> implements 
                 linkGotoMapper.delete(linkGotoQueryWrapper);
                 linkGotoDO.setGid(linkUpdateReqDTO.getGid());
                 linkGotoMapper.insert(linkGotoDO);
+
+                // 失效消费者的 gid 缓存
+                linkStatsSaveConsumer.invalidateGidCache(linkUpdateReqDTO.getFullShortUrl());
             } finally {
                 rLock.unlock();
             }

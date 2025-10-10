@@ -19,6 +19,7 @@ public interface LinkMapper extends BaseMapper<LinkDO> {
 
     /**
      * 增量更新短链接统计数据
+     * @return 受影响的行数
      */
     @Update("""
             UPDATE t_link
@@ -27,12 +28,13 @@ public interface LinkMapper extends BaseMapper<LinkDO> {
                 total_uip = total_uip + #{totalUip}
             WHERE gid = #{gid}
               AND full_short_url = #{fullShortUrl}
+              AND del_flag = 0
             """)
-    void incrementStats(@Param("gid") String gid,
-                        @Param("fullShortUrl") String fullShortUrl,
-                        @Param("totalPv") Integer totalPv,
-                        @Param("totalUv") Integer totalUv,
-                        @Param("totalUip") Integer totalUip);
+    int incrementStats(@Param("gid") String gid,
+                       @Param("fullShortUrl") String fullShortUrl,
+                       @Param("totalPv") Integer totalPv,
+                       @Param("totalUv") Integer totalUv,
+                       @Param("totalUip") Integer totalUip);
 
     /**
      * 分页统计短链接
