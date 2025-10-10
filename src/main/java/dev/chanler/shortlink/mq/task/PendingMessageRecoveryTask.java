@@ -73,7 +73,7 @@ public class PendingMessageRecoveryTask {
                     SHORT_LINK_STATS_STREAM_TOPIC_KEY,
                     SHORT_LINK_STATS_STREAM_GROUP_KEY,
                     "stats-consumer",
-                    Duration.ofMinutes(5),  // 只认领 idle > 5分钟的
+                    Duration.ofMinutes(2),  // 只认领 idle > 2分钟的
                     allPendingIds
                 );
             } catch (NullPointerException e) {

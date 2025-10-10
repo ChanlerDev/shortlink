@@ -27,7 +27,7 @@ public class MessageQueueIdempotentHandler {
     public boolean isProcessed(String messageId) {
         String key = String.format(IDEMPOTENT_KEY_PREFIX, messageId);
         // setIfAbsent 返回 false 表示 key 已存在（已被处理过）
-        return Boolean.FALSE.equals(stringRedisTemplate.opsForValue().setIfAbsent(key, "0", 2L, TimeUnit.MINUTES));
+        return Boolean.FALSE.equals(stringRedisTemplate.opsForValue().setIfAbsent(key, "0", 4L, TimeUnit.MINUTES));
     }
 
     /**
