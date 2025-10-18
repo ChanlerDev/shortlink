@@ -35,7 +35,6 @@ import java.time.ZonedDateTime;
 import java.util.Arrays;
 import java.util.Date;
 import java.util.Map;
-import java.util.Objects;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.LinkedBlockingQueue;
@@ -66,6 +65,7 @@ public class LinkStatsSaveConsumer implements StreamListener<String, MapRecord<S
     private final LinkAccessLogsMapper linkAccessLogsMapper;
     private final LinkDeviceStatsMapper linkDeviceStatsMapper;
     private final LinkNetworkStatsMapper linkNetworkStatsMapper;
+    private final LinkFirstVisitMapper linkFirstVisitMapper;
     private final StringRedisTemplate stringRedisTemplate;
     private final TransactionTemplate transactionTemplate;
     private final MessageQueueIdempotentHandler messageQueueIdempotentHandler;
@@ -372,44 +372,53 @@ public class LinkStatsSaveConsumer implements StreamListener<String, MapRecord<S
         }
     }
 
+    /**
+     * 保存访问日志并判断是否首次访问(使用判重表 + 唯一索引替代 SELECT FOR UPDATE)
+     */
     private void saveAccessLogWithFirstFlag(String fullShortUrl,
                                             LinkStatsRecordDTO statsRecord,
                                             GeoInfo geoInfo) {
-        transactionTemplate.executeWithoutResult(status -> {
-            boolean isFirstVisit = false;
-            String uv = statsRecord.getUv();
-            if (StrUtil.isNotBlank(uv)) {
-                LinkAccessLogsDO existed = linkAccessLogsMapper.selectOne(
-                        Wrappers.lambdaQuery(LinkAccessLogsDO.class)
-                                .eq(LinkAccessLogsDO::getFullShortUrl, fullShortUrl)
-                                .eq(LinkAccessLogsDO::getUser, uv)
-                                .eq(LinkAccessLogsDO::getDelFlag, 0)
-                                .last("LIMIT 1 FOR UPDATE"));
-                isFirstVisit = Objects.isNull(existed);
-            }
-
-            String locale = null;
-            if (geoInfo != null) {
-                locale = Stream.of(geoInfo.getCountry(), geoInfo.getProvince(), geoInfo.getCity())
-                        .filter(StrUtil::isNotBlank)
-                        .collect(Collectors.joining("-"));
-                if (StrUtil.isBlank(locale)) {
-                    locale = null;
-                }
-            }
-
-            LinkAccessLogsDO accessLogsDO = LinkAccessLogsDO.builder()
+        boolean isFirstVisit = false;
+        String uv = statsRecord.getUv();
+        
+        // 使用判重表代替 SELECT FOR UPDATE
+        if (StrUtil.isNotBlank(uv)) {
+            // 尝试插入判重表，利用唯一索引保证原子性
+            LinkFirstVisitDO firstVisitDO = LinkFirstVisitDO.builder()
                     .fullShortUrl(fullShortUrl)
-                    .user(statsRecord.getUv())
-                    .ip(statsRecord.getUip())
-                    .browser(statsRecord.getBrowser())
-                    .os(statsRecord.getOs())
-                    .network(geoInfo != null ? geoInfo.getIsp() : null)
-                    .device(statsRecord.getDevice())
-                    .locale(locale)
-                    .firstFlag(isFirstVisit)
+                    .user(uv)
                     .build();
-            linkAccessLogsMapper.insert(accessLogsDO);
-        });
+
+            int affected = linkFirstVisitMapper.insertIgnore(firstVisitDO);
+            isFirstVisit = (affected > 0);
+
+            log.debug("First visit check: url={}, user={}, isFirst={}",
+                    fullShortUrl, uv, isFirstVisit);
+        }
+
+        // 构建地理位置信息
+        String locale = null;
+        if (geoInfo != null) {
+            locale = Stream.of(geoInfo.getCountry(), geoInfo.getProvince(), geoInfo.getCity())
+                    .filter(StrUtil::isNotBlank)
+                    .collect(Collectors.joining("-"));
+            if (StrUtil.isBlank(locale)) {
+                locale = null;
+            }
+        }
+
+        // 插入访问日志
+        LinkAccessLogsDO accessLogsDO = LinkAccessLogsDO.builder()
+                .fullShortUrl(fullShortUrl)
+                .user(statsRecord.getUv())
+                .ip(statsRecord.getUip())
+                .browser(statsRecord.getBrowser())
+                .os(statsRecord.getOs())
+                .network(geoInfo != null ? geoInfo.getIsp() : null)
+                .device(statsRecord.getDevice())
+                .locale(locale)
+                .firstFlag(isFirstVisit)
+                .build();
+        linkAccessLogsMapper.insert(accessLogsDO);
     }
 }

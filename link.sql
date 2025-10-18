@@ -948,3 +948,15 @@ CREATE TABLE `t_api_token`
     UNIQUE KEY `uk_token_hash` (`token_hash`) USING BTREE,
     KEY `idx_username` (`username`) USING BTREE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='API 访问令牌';
+
+-- 首次访问判重表：用于替代 SELECT FOR UPDATE，提升并发性能
+CREATE TABLE `t_link_first_visit`
+(
+    `id`             bigint(20) NOT NULL AUTO_INCREMENT COMMENT 'ID',
+    `full_short_url` varchar(128) NOT NULL COMMENT '完整短链接',
+    `user`           varchar(64)  NOT NULL COMMENT '用户标识',
+    `create_time`    datetime     NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '首次访问时间',
+    PRIMARY KEY (`id`),
+    UNIQUE KEY `uniq_url_user` (`full_short_url`, `user`) USING BTREE,
+    KEY              `idx_create_time` (`create_time`) USING BTREE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='首次访问判重表，利用唯一索引实现高并发去重';
