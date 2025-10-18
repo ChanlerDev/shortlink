@@ -1,16 +1,23 @@
 package dev.chanler.shortlink.mq.task;
 
 import dev.chanler.shortlink.mq.consumer.LinkStatsSaveConsumer;
+import jakarta.annotation.PostConstruct;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.data.redis.connection.stream.*;
+import org.springframework.data.redis.connection.stream.MapRecord;
+import org.springframework.data.redis.connection.stream.RecordId;
 import org.springframework.data.redis.core.StringRedisTemplate;
-import org.springframework.data.domain.Range;
+import org.springframework.data.redis.core.script.DefaultRedisScript;
+import org.springframework.core.io.ClassPathResource;
+import org.springframework.scripting.support.ResourceScriptSource;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
 import java.time.Duration;
+import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 
 import static dev.chanler.shortlink.common.constant.RedisKeyConstant.SHORT_LINK_STATS_STREAM_GROUP_KEY;
 import static dev.chanler.shortlink.common.constant.RedisKeyConstant.SHORT_LINK_STATS_STREAM_TOPIC_KEY;
@@ -23,87 +30,113 @@ import static dev.chanler.shortlink.common.constant.RedisKeyConstant.SHORT_LINK_
 @Component
 @RequiredArgsConstructor
 public class PendingMessageRecoveryTask {
-    
+
     private final StringRedisTemplate stringRedisTemplate;
     private final LinkStatsSaveConsumer consumer;
 
-    @Scheduled(fixedRate = 30000) // 每30秒检查一次
+    private DefaultRedisScript<List<?>> autoClaimScript;
+    private static final String STREAM_XAUTOCLAIM_LUA_PATH = "lua/stream_xautoclaim_recover.lua";
+    private static final String RECOVER_CURSOR_KEY = "short-link:stats-stream:recover-cursor";
+
+    @PostConstruct
+    public void initScript() {
+        autoClaimScript = new DefaultRedisScript<>();
+        autoClaimScript.setScriptSource(new ResourceScriptSource(new ClassPathResource(STREAM_XAUTOCLAIM_LUA_PATH)));
+        autoClaimScript.setResultType((Class) List.class);
+    }
+
+    @Scheduled(fixedRate = 30000) // 每 30 秒检查一次
     public void recoverPendingMessages() {
         try {
-            // 1. 查询 Pending 总数
-            PendingMessagesSummary summary = stringRedisTemplate.opsForStream()
-                .pending(SHORT_LINK_STATS_STREAM_TOPIC_KEY,
-                         SHORT_LINK_STATS_STREAM_GROUP_KEY);
+            String startId = stringRedisTemplate.opsForValue().get(RECOVER_CURSOR_KEY);
+            if (startId == null || startId.isBlank()) startId = "0-0";
 
-            if (summary == null || summary.getTotalPendingMessages() == 0) {
-                log.debug("PEL 巡检: 无 Pending 消息");
-                return;
-            }
+            long minIdleMs = Duration.ofMinutes(2).toMillis();
+            int count = 200;
+            String consumerName = "stats-recoverer";
 
-            log.debug("PEL 巡检: 发现 {} 条 Pending 消息", summary.getTotalPendingMessages());
-
-            // 2. 获取 Pending 列表（最多100条）
-            PendingMessages messages = stringRedisTemplate.opsForStream()
-                .pending(SHORT_LINK_STATS_STREAM_TOPIC_KEY,
-                         SHORT_LINK_STATS_STREAM_GROUP_KEY,
-                         Range.unbounded(),
-                         100L);
-
-            if (messages == null || messages.isEmpty()) {
-                log.debug("PEL 巡检: Pending 列表为空");
-                return;
-            }
-
-            // 3. 批量收集所有 Pending 的 ID (过滤 null)
-            RecordId[] allPendingIds = messages.stream()
-                .map(PendingMessage::getId)
-                .filter(id -> id != null)  // 防止 null 导致 Redisson NPE
-                .toArray(RecordId[]::new);
-
-            // 空数组检查：避免 Redisson xClaim 的 NPE bug
-            if (allPendingIds.length == 0) {
-                log.debug("PEL 巡检: 没有有效的 Pending 消息 ID");
-                return;
-            }
-
-            // 4. XCLAIM 的 minIdleTime 会自动过滤：只认领 idle > 5分钟的消息
-            List<MapRecord<String, Object, Object>> claimed = null;
-            try {
-                claimed = stringRedisTemplate.opsForStream().claim(
-                    SHORT_LINK_STATS_STREAM_TOPIC_KEY,
+            List<?> res = stringRedisTemplate.execute(
+                    autoClaimScript,
+                    Collections.singletonList(SHORT_LINK_STATS_STREAM_TOPIC_KEY),
                     SHORT_LINK_STATS_STREAM_GROUP_KEY,
-                    "stats-consumer",
-                    Duration.ofMinutes(2),  // 只认领 idle > 2分钟的
-                    allPendingIds
-                );
-            } catch (NullPointerException e) {
-                // Redisson 3.21.3 的 xClaim 有 NPE bug，降级处理
-                log.warn("XCLAIM 调用失败 (可能是 Redisson NPE bug)，跳过本次恢复: {}", e.getMessage());
+                    consumerName,
+                    String.valueOf(minIdleMs),
+                    startId,
+                    String.valueOf(count)
+            );
+
+            if (res == null || res.size() < 2) {
+                log.debug("PEL 巡检: 无消息需要补偿，跳过本轮");
+                return;
+            }
+            String nextStart = deserializeString(res.get(0));
+            List<?> entriesRaw = (List<?>) res.get(1);
+
+            if (entriesRaw == null || entriesRaw.isEmpty()) {
+                log.debug("PEL 巡检: 本轮未认领到消息，nextStart={}", nextStart);
+                if (nextStart != null && !nextStart.isEmpty() && !nextStart.equals(startId)) {
+                    stringRedisTemplate.opsForValue().set(RECOVER_CURSOR_KEY, nextStart);
+                }
                 return;
             }
 
-            // 5. 处理认领到的消息（已被 Redis 自动过滤）
-            if (claimed == null || claimed.isEmpty()) {
-                return;
-            }
+            int recovered = 0;
+            for (Object raw : entriesRaw) {
+                if (!(raw instanceof List<?> item) || item.size() < 2) {
+                    continue;
+                }
+                String id = deserializeString(item.get(0));
+                List<?> flatFields = (List<?>) item.get(1);
+                Map<String, String> map = convertFlatToMap(flatFields);
 
-            int recoveredCount = 0;
-            for (MapRecord<String, Object, Object> record : claimed) {
                 try {
-                    MapRecord<String, String, String> typedRecord =
-                        (MapRecord<String, String, String>) (MapRecord<?, ?, ?>) record;
-                    consumer.onMessage(typedRecord);
-                    recoveredCount++;
+                    MapRecord<String, String, String> record = MapRecord.create(
+                            SHORT_LINK_STATS_STREAM_TOPIC_KEY, map).withId(RecordId.of(id));
+                    consumer.onMessage(record);
+                    recovered++;
                 } catch (Exception e) {
-                    log.error("恢复 Pending 消息失败: {}", record.getId(), e);
+                    log.error("恢复 Pending 消息失败: {}", id, e);
                 }
             }
 
-            log.info("PEL 巡检: 发现 {} 条 Pending，恢复 {} 条超时消息",
-                     messages.size(), recoveredCount);
-
+            if (nextStart != null && !nextStart.isEmpty()) {
+                stringRedisTemplate.opsForValue().set(RECOVER_CURSOR_KEY, nextStart);
+            }
+            log.info("PEL 巡检: 通过 XAUTOCLAIM 恢复 {} 条超时消息，下一起始点={}", recovered, nextStart);
         } catch (Exception e) {
             log.error("PEL 恢复任务执行失败", e);
         }
     }
+
+    /**
+     * 将 Redis Stream 字段值转换为 Map，输入格式为 [field1, value1, field2, value2, ...]
+     */
+    private Map<String, String> convertFlatToMap(List<?> kvs) {
+        if (kvs == null || kvs.isEmpty()) {
+            return Collections.emptyMap();
+        }
+        Map<String, String> result = new LinkedHashMap<>(kvs.size() / 2 + 1);
+        for (int i = 0; i + 1 < kvs.size(); i += 2) {
+            String key = deserializeString(kvs.get(i));
+            String val = deserializeString(kvs.get(i + 1));
+            if (key != null && val != null) {
+                result.put(key, val);
+            }
+        }
+        return result;
+    }
+
+    private String deserializeString(Object obj) {
+        if (obj == null) {
+            return null;
+        }
+        if (obj instanceof String s) {
+            return s;
+        }
+        if (obj instanceof byte[] bytes) {
+            return stringRedisTemplate.getStringSerializer().deserialize(bytes);
+        }
+        return String.valueOf(obj);
+    }
 }
+

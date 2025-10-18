@@ -2,6 +2,8 @@ package dev.chanler.shortlink.common.config;
 
 import dev.chanler.shortlink.mq.consumer.LinkStatsSaveConsumer;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.data.redis.connection.RedisConnectionFactory;
@@ -26,6 +28,7 @@ import static dev.chanler.shortlink.common.constant.RedisKeyConstant.SHORT_LINK_
  * Redis Stream 消息队列配置
  * @author: Chanler
  */
+@Slf4j
 @Configuration
 @RequiredArgsConstructor
 public class RedisStreamConfiguration {
@@ -37,6 +40,7 @@ public class RedisStreamConfiguration {
     public ExecutorService asyncStreamConsumer() {
         // 并发线程数按 CPU 动态设置，至少 3，最多 4
         int nThreads = Math.min(4, Math.max(3, Runtime.getRuntime().availableProcessors() * 2));
+        log.info("消费者线程池配置，线程数： {}", nThreads);
         AtomicInteger index = new AtomicInteger();
         return new ThreadPoolExecutor(
                 nThreads,
