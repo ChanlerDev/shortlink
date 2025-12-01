@@ -5,6 +5,7 @@ import dev.chanler.shortlink.common.database.BaseDO;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
+import lombok.EqualsAndHashCode;
 import lombok.NoArgsConstructor;
 
 /**
@@ -15,6 +16,7 @@ import lombok.NoArgsConstructor;
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
+@EqualsAndHashCode(callSuper = true)
 @TableName("t_link_access_logs")
 public class LinkAccessLogsDO extends BaseDO {
 
@@ -67,4 +69,9 @@ public class LinkAccessLogsDO extends BaseDO {
      * 首访标记
      */
     private Boolean firstFlag;
+
+    /**
+     * 消息ID（Redis Stream RecordId，用于 DB 层幂等兜底）
+     */
+    private String messageId;
 }

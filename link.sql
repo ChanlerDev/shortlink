@@ -658,10 +658,12 @@ CREATE TABLE `t_link_access_logs`
     `device`         varchar(64)  DEFAULT NULL COMMENT '访问设备',
     `locale`         varchar(256) DEFAULT NULL COMMENT '地区',
     `first_flag`     tinyint(1)   DEFAULT '0' COMMENT '首访标记 1：是 0：否',
+    `message_id`     varchar(64)  DEFAULT NULL COMMENT '消息ID（Redis Stream RecordId，用于幂等）',
     `create_time`    datetime     DEFAULT NULL COMMENT '创建时间',
     `update_time`    datetime     DEFAULT NULL COMMENT '修改时间',
     `del_flag`       tinyint(1) DEFAULT NULL COMMENT '删除标识 0：未删除 1：已删除',
     PRIMARY KEY (`id`),
+    UNIQUE KEY `idx_unique_message_id` (`message_id`) USING BTREE,
     KEY              `idx_full_short_url_user` (`full_short_url`, `user`) USING BTREE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 

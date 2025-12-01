@@ -42,11 +42,12 @@ public class MessageQueueIdempotentHandler {
 
     /**
      * 设置消息流程执行完成
+     * 第一次被获取到的最坏时间为 minIdleMs + 巡检间隔，也就是 2.5 分钟
      * @param messageId 消息唯一标识
      */
     public void setAccomplish(String messageId) {
         String key = String.format(IDEMPOTENT_KEY_PREFIX, messageId);
-        stringRedisTemplate.opsForValue().set(key, "1", 60L, TimeUnit.SECONDS);
+        stringRedisTemplate.opsForValue().set(key, "1", 4L, TimeUnit.MINUTES);
     }
 
     /**

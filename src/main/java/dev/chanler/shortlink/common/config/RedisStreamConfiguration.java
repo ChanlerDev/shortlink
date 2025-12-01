@@ -16,10 +16,10 @@ import org.springframework.data.redis.stream.StreamMessageListenerContainer;
 import org.springframework.data.redis.stream.Subscription;
 
 import java.time.Duration;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.concurrent.ExecutorService;
-import java.util.concurrent.LinkedBlockingQueue;
-import java.util.concurrent.ThreadPoolExecutor;
-import java.util.concurrent.TimeUnit;
+import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.LongAdder;
@@ -39,30 +39,21 @@ public class RedisStreamConfiguration {
     private final RedisConnectionFactory redisConnectionFactory;
     private final LinkStatsSaveConsumer linkStatsSaveConsumer;
 
+    // 每 CPU ≈1.5 个消费者，向下取整，至少 1 个
+    private final int consumerCount = Math.max(1, (int) Math.floor(Runtime.getRuntime().availableProcessors() * 1.5));
     private static final long THROUGHPUT_LOG_INTERVAL_MS = 300_000L;
     private final LongAdder consumeCounter = new LongAdder();
     private final AtomicLong lastThroughputLogTime = new AtomicLong(System.currentTimeMillis());
 
     @Bean
     public ExecutorService asyncStreamConsumer() {
-        // 并发线程数按 CPU 动态设置，至少 3，最多 4
-        int nThreads = Math.min(4, Math.max(3, Runtime.getRuntime().availableProcessors() * 2));
-        log.info("消费者线程池配置，线程数： {}", nThreads);
         AtomicInteger index = new AtomicInteger();
-        return new ThreadPoolExecutor(
-                nThreads,
-                nThreads,
-                60,
-                TimeUnit.SECONDS,
-                new LinkedBlockingQueue<>(600), // 改用有界队列，容量 600
-                runnable -> {
-                    Thread thread = new Thread(runnable);
-                    thread.setName("stream_consumer_short-link_stats_" + index.incrementAndGet());
-                    thread.setDaemon(true);
-                    return thread;
-                },
-                new ThreadPoolExecutor.CallerRunsPolicy() // 队列满时背压
-        );
+        log.info("消费者线程池配置，线程数：{}", consumerCount);
+        return Executors.newFixedThreadPool(consumerCount, r -> {
+            Thread t = new Thread(r, "stream_consumer_stats_" + index.getAndIncrement());
+            t.setDaemon(true);
+            return t;
+        });
     }
 
     @Bean(initMethod = "start", destroyMethod = "stop")
@@ -71,24 +62,21 @@ public class RedisStreamConfiguration {
         StreamMessageListenerContainer.StreamMessageListenerContainerOptions<String, MapRecord<String, String, String>> options =
                 StreamMessageListenerContainer.StreamMessageListenerContainerOptions
                         .builder()
-                        .batchSize(200) // 提升批量抓取，提高吞吐
+                        .batchSize(100) // 每个消费者每次拉取 100 条
                         .executor(asyncStreamConsumer)
-                        .pollTimeout(Duration.ofMillis(500)) // 更快的轮询以降低延迟
+                        .pollTimeout(Duration.ofMillis(500))
                         .build();
         return StreamMessageListenerContainer.create(redisConnectionFactory, options);
     }
 
-    @Bean(destroyMethod = "cancel")
-    public Subscription shortLinkStatsSaveConsumerSubscription(
-            StreamMessageListenerContainer<String, MapRecord<String, String, String>> streamMessageListenerContainer) {
-        // 多线程消费者 + LinkedBlockingQueue + 批量拉取
-        StreamMessageListenerContainer.StreamReadRequest<String> streamReadRequest =
-                StreamMessageListenerContainer.StreamReadRequest.builder(
-                                StreamOffset.create(SHORT_LINK_STATS_STREAM_TOPIC_KEY, ReadOffset.lastConsumed()))
-                        .cancelOnError(throwable -> false)
-                        .consumer(Consumer.from(SHORT_LINK_STATS_STREAM_GROUP_KEY, "stats-consumer"))
-                        .autoAcknowledge(false)
-                        .build();
+    /**
+     * 创建多个消费者订阅，实现真正的并行消费
+     */
+    @Bean
+    public List<Subscription> shortLinkStatsSaveConsumerSubscriptions(
+            StreamMessageListenerContainer<String, MapRecord<String, String, String>> container) {
+
+        List<Subscription> subscriptions = new ArrayList<>();
 
         StreamListener<String, MapRecord<String, String, String>> loggingListener = message -> {
             consumeCounter.increment();
@@ -100,12 +88,26 @@ public class RedisStreamConfiguration {
                 long processed = consumeCounter.sumThenReset();
                 if (processed > 0) {
                     long tps = processed * 1000 / THROUGHPUT_LOG_INTERVAL_MS;
-                    log.info("Stream 消费的吞吐量: {} msgs / {} ms (≈{} TPS)",
+                    log.info("Stream 消费吞吐量: {} msgs / {} ms (≈{} TPS)",
                             processed, THROUGHPUT_LOG_INTERVAL_MS, tps);
                 }
             }
         };
 
-        return streamMessageListenerContainer.register(streamReadRequest, loggingListener);
+        for (int i = 0; i < consumerCount; i++) {
+            StreamMessageListenerContainer.StreamReadRequest<String> request =
+                    StreamMessageListenerContainer.StreamReadRequest.builder(
+                                    StreamOffset.create(SHORT_LINK_STATS_STREAM_TOPIC_KEY, ReadOffset.lastConsumed()))
+                            .cancelOnError(throwable -> false)
+                            .consumer(Consumer.from(SHORT_LINK_STATS_STREAM_GROUP_KEY, "stats-consumer-" + i))
+                            .autoAcknowledge(false)
+                            .build();
+
+            Subscription subscription = container.register(request, loggingListener);
+            subscriptions.add(subscription);
+            log.info("注册消费者: stats-consumer-{}", i);
+        }
+
+        return subscriptions;
     }
 }
