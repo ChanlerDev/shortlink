@@ -52,7 +52,7 @@ services:
 
   # 短链接应用服务
   app:
-    image: ghcr.io/merryfling/shortlink:latest
+    image: ghcr.io/chanlerdev/shortlink:latest
     container_name: shortlink-app
     restart: unless-stopped
     ports:
