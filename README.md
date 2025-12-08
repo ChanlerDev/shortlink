@@ -13,6 +13,108 @@
 - **分库分表** - ShardingSphere 16 表水平分片
 - **MCP 集成** - 标准 SSE 端点，支持 AI 工具调用
 
+## 压测结果
+
+### 创建短链接（600 并发）
+
+<table>
+  <tr>
+    <td style="text-align:center;">JMeter Summary Report</td>
+    <td style="text-align:center;">JMeter TPS Chart</td>
+  </tr>
+  <tr>
+    <td>
+      <img
+        src="https://server.chanler.dev/api/v2/objects/file/1765181862267701393.png"
+        width="420"
+        alt="Create short link - JMeter summary report (600 concurrency)"
+      />
+    </td>
+    <td>
+      <img
+        src="https://server.chanler.dev/api/v2/objects/file/1765181900806979878.png"
+        width="420"
+        alt="Create short link - JMeter TPS chart (600 concurrency)"
+      />
+    </td>
+  </tr>
+  <tr>
+    <td style="text-align:center;">Response Times (ms)</td>
+    <td style="text-align:center;">Docker Activity Monitor</td>
+  </tr>
+  <tr>
+    <td>
+      <img
+        src="https://server.chanler.dev/api/v2/objects/file/1765181944722772883.png"
+        width="420"
+        alt="Create short link - response times in ms (600 concurrency)"
+      />
+    </td>
+    <td>
+      <img
+        src="https://server.chanler.dev/api/v2/objects/file/1765181926532579210.png"
+        width="420"
+        alt="Create short link - Docker activity monitor (600 concurrency)"
+      />
+    </td>
+  </tr>
+</table>
+
+### 跳转短链接（1000 并发）
+
+<table>
+  <tr>
+    <td style="text-align:center;">JMeter TPS Chart</td>
+    <td style="text-align:center;">Response Times (ms)</td>
+  </tr>
+  <tr>
+    <td>
+      <img
+        src="https://server.chanler.dev/api/v2/objects/file/1765182029214273175.png"
+        width="420"
+        alt="Redirect short link - JMeter TPS chart (1000 concurrency)"
+      />
+    </td>
+    <td>
+      <img
+        src="https://server.chanler.dev/api/v2/objects/file/1765182044801780901.png"
+        width="420"
+        alt="Redirect short link - response times in ms (1000 concurrency)"
+      />
+    </td>
+  </tr>
+  <tr>
+    <td style="text-align:center;">JMeter Summary Report</td>
+    <td style="text-align:center;">Docker Activity Monitor</td>
+  </tr>
+  <tr>
+    <td>
+      <img
+        src="https://server.chanler.dev/api/v2/objects/file/1765182062856142825.png"
+        width="420"
+        alt="Redirect short link - JMeter summary report (1000 concurrency)"
+      />
+    </td>
+    <td>
+      <img
+        src="https://server.chanler.dev/api/v2/objects/file/1765182084882213107.png"
+        width="420"
+        alt="Redirect short link - Docker activity monitor (1000 concurrency)"
+      />
+    </td>
+  </tr>
+</table>
+
+### 统计消费（4 个 Consumer）
+
+<p style="text-align:center;">
+  <img
+    src="https://server.chanler.dev/api/v2/objects/file/1765182490213883155.png"
+    width="800"
+    alt="Redis Stream stats consumer throughput log with 4 consumers"
+  />
+</p>
+
 ## Architecture
 
 ```mermaid
